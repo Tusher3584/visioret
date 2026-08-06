@@ -1,9 +1,3 @@
-"""Visioret -- Streamlit demo app.
-
-Run with:
-    streamlit run app.py
-"""
-
 import glob
 import os
 
@@ -29,7 +23,7 @@ st.set_page_config(page_title="Visioret", page_icon="👁️", layout="wide")
 @st.cache_resource
 def get_model():
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    model, checkpoint_loaded, classes = load_model(CHECKPOINT_PATH, device)
+    model, checkpoint_loaded, classes, _val_macro_f1 = load_model(CHECKPOINT_PATH, device)
     return model, checkpoint_loaded, classes, device
 
 

@@ -1,0 +1,19 @@
+services:
+  db:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: visioret
+      POSTGRES_PASSWORD: visioret
+      POSTGRES_DB: visioret
+    ports:
+      - "5433:5432"  # 5432 was already taken by a pre-existing local Postgres service
+    volumes:
+      - visioret_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U visioret"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  visioret_pgdata:

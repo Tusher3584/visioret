@@ -1,0 +1,13 @@
+Test set: 13146 images from 858 patients, reserved from pooled train+val+test before any training (patient_split.json)
+Checkpoint: I:\Coding\visioret\model\checkpoints\resnet50_oct.pth
+
+              precision    recall  f1-score   support
+
+         CNV     0.9833    0.9527    0.9678      6663
+         DME     0.9520    0.9124    0.9318      1632
+      DRUSEN     0.7724    0.9040    0.8330      1010
+      NORMAL     0.9660    0.9919    0.9788      3841
+
+    accuracy                         0.9554     13146
+   macro avg     0.9184    0.9402    0.9278     13146
+weighted avg     0.9582    0.9554    0.9562     13146

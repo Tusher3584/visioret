@@ -2,3 +2,13 @@ venv/
 __pycache__/
 *.pyc
 .streamlit/
+backend/media/
+.env
+
+# Large training artifacts that don't belong in git: safety backups made
+# during training, and the resume-state file (model+optimizer+scheduler,
+# ~3x checkpoint size) which is only useful mid-run, not after.
+# model/checkpoints/resnet50_oct.pth (the actual trained model) is NOT
+# excluded -- that one is intentionally tracked.
+model/checkpoints/*backup*.pth
+model/checkpoints/*resume_state*.pth

@@ -33,16 +33,19 @@ def load_model(checkpoint_path, device):
     """Loads a fine-tuned checkpoint if present, otherwise falls back to an
     ImageNet-pretrained backbone with a freshly-initialized 4-class head.
 
-    Returns (model, checkpoint_loaded, class_names).
+    Returns (model, checkpoint_loaded, class_names, val_macro_f1).
+    val_macro_f1 is None when no checkpoint is loaded or it predates that field.
     """
     classes = CLASS_NAMES
     checkpoint_loaded = False
+    val_macro_f1 = None
 
     if checkpoint_path and os.path.isfile(checkpoint_path):
         try:
             checkpoint = torch.load(checkpoint_path, map_location=device)
             if isinstance(checkpoint, dict) and "model_state_dict" in checkpoint:
                 classes = checkpoint.get("classes", CLASS_NAMES)
+                val_macro_f1 = checkpoint.get("val_macro_f1")
                 model = build_model(num_classes=len(classes))
                 model.load_state_dict(checkpoint["model_state_dict"])
             else:
@@ -57,7 +60,7 @@ def load_model(checkpoint_path, device):
 
     model.to(device)
     model.eval()
-    return model, checkpoint_loaded, classes
+    return model, checkpoint_loaded, classes, val_macro_f1
 
 
 def preprocess_image(image: Image.Image) -> torch.Tensor:

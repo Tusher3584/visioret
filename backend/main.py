@@ -1,0 +1,199 @@
+"""Visioret backend -- FastAPI service wrapping model/inference.py.
+
+Run with (from the project root):
+    uvicorn backend.main:app --reload --port 8000
+"""
+
+import io
+import os
+import sys
+from contextlib import asynccontextmanager
+
+import torch
+from fastapi import Depends, FastAPI, File, HTTPException, UploadFile
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
+from PIL import Image, UnidentifiedImageError
+from sqlalchemy.orm import Session
+
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from model.inference import (  # noqa: E402
+    generate_gradcam,
+    load_model,
+    overlay_gradcam,
+    predict,
+    preprocess_image,
+)
+
+from backend.db.models import GradcamResult, ModelVersion, Prediction, Scan  # noqa: E402
+from backend.db.session import get_db  # noqa: E402
+from backend.schemas import HealthResponse, PredictionResponse, ScanDetail, ScanSummary  # noqa: E402
+from backend.storage import MEDIA_DIR, new_scan_id, save_scan_images  # noqa: E402
+
+ROOT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+CHECKPOINT_PATH = os.path.join(ROOT_DIR, "model", "checkpoints", "resnet50_oct.pth")
+
+model_state = {}
+
+
+def get_or_create_model_version(db: Session, checkpoint_path: str, val_macro_f1) -> ModelVersion:
+    """One ModelVersion row per distinct checkpoint file (keyed by its mtime,
+    so retraining -- which produces a new file mtime -- gets its own row and
+    predictions stay attributable to the exact model that made them)."""
+    if not os.path.isfile(checkpoint_path):
+        version_label = "untrained-imagenet-backbone"
+    else:
+        mtime = int(os.path.getmtime(checkpoint_path))
+        version_label = f"resnet50_oct_{mtime}"
+
+    existing = db.query(ModelVersion).filter_by(version_label=version_label).first()
+    if existing:
+        return existing
+
+    version = ModelVersion(
+        version_label=version_label, checkpoint_path=checkpoint_path, val_macro_f1=val_macro_f1
+    )
+    db.add(version)
+    db.commit()
+    db.refresh(version)
+    return version
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    model, checkpoint_loaded, classes, val_macro_f1 = load_model(CHECKPOINT_PATH, device)
+    model_state["model"] = model
+    model_state["device"] = device
+    model_state["checkpoint_loaded"] = checkpoint_loaded
+    model_state["classes"] = classes
+
+    from backend.db.session import SessionLocal
+
+    db = SessionLocal()
+    try:
+        version = get_or_create_model_version(db, CHECKPOINT_PATH, val_macro_f1)
+        model_state["model_version_id"] = version.id
+        model_state["model_version_label"] = version.version_label
+    finally:
+        db.close()
+
+    yield
+    model_state.clear()
+
+
+app = FastAPI(title="Visioret API", lifespan=lifespan)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:5173", "http://127.0.0.1:5173"],
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+os.makedirs(MEDIA_DIR, exist_ok=True)
+app.mount("/media", StaticFiles(directory=os.path.dirname(MEDIA_DIR)), name="media")
+
+
+@app.get("/api/health", response_model=HealthResponse)
+def health():
+    return HealthResponse(
+        status="ok",
+        device=model_state["device"].type,
+        checkpoint_loaded=model_state["checkpoint_loaded"],
+        classes=model_state["classes"],
+    )
+
+
+@app.post("/api/predict", response_model=PredictionResponse)
+async def predict_endpoint(file: UploadFile = File(...), db: Session = Depends(get_db)):
+    if file.content_type not in ("image/jpeg", "image/png"):
+        raise HTTPException(status_code=400, detail="File must be a JPEG or PNG image.")
+
+    contents = await file.read()
+    try:
+        image = Image.open(io.BytesIO(contents))
+        image.load()
+    except UnidentifiedImageError:
+        raise HTTPException(status_code=400, detail="Could not read file as an image.")
+
+    model = model_state["model"]
+    device = model_state["device"]
+    classes = model_state["classes"]
+
+    image_tensor = preprocess_image(image)
+    class_name, confidence, probabilities = predict(model, image_tensor, device, class_names=classes)
+    class_index = classes.index(class_name)
+    heatmap = generate_gradcam(model, image_tensor, class_index, device)
+    overlay = overlay_gradcam(image, heatmap)
+
+    file_id = new_scan_id()
+    original_url, overlay_url = save_scan_images(file_id, image, overlay)
+
+    scan = Scan(file_path=original_url)
+    db.add(scan)
+    db.flush()  # assigns scan.id without committing yet
+
+    prediction = Prediction(
+        scan_id=scan.id,
+        model_version_id=model_state["model_version_id"],
+        predicted_class=class_name,
+        confidence=confidence,
+        class_probabilities=probabilities,
+    )
+    db.add(prediction)
+    db.flush()
+
+    db.add(GradcamResult(prediction_id=prediction.id, heatmap_path=overlay_url))
+    db.commit()
+
+    return PredictionResponse(
+        scan_id=scan.id,
+        predicted_class=class_name,
+        confidence=confidence,
+        probabilities=probabilities,
+        original_image_url=original_url,
+        gradcam_overlay_url=overlay_url,
+    )
+
+
+@app.get("/api/scans", response_model=list[ScanSummary])
+def list_scans(db: Session = Depends(get_db), limit: int = 50):
+    scans = db.query(Scan).order_by(Scan.uploaded_at.desc()).limit(limit).all()
+    results = []
+    for scan in scans:
+        if not scan.predictions:
+            continue
+        latest = max(scan.predictions, key=lambda p: p.predicted_at)
+        results.append(
+            ScanSummary(
+                scan_id=scan.id,
+                uploaded_at=scan.uploaded_at,
+                predicted_class=latest.predicted_class,
+                confidence=latest.confidence,
+                original_image_url=scan.file_path,
+            )
+        )
+    return results
+
+
+@app.get("/api/scans/{scan_id}", response_model=ScanDetail)
+def get_scan(scan_id: int, db: Session = Depends(get_db)):
+    scan = db.query(Scan).filter_by(id=scan_id).first()
+    if not scan or not scan.predictions:
+        raise HTTPException(status_code=404, detail="Scan not found.")
+
+    latest = max(scan.predictions, key=lambda p: p.predicted_at)
+    if not latest.gradcam_result:
+        raise HTTPException(status_code=500, detail="Scan has no Grad-CAM result on record.")
+
+    return ScanDetail(
+        scan_id=scan.id,
+        uploaded_at=scan.uploaded_at,
+        predicted_class=latest.predicted_class,
+        confidence=latest.confidence,
+        probabilities=latest.class_probabilities,
+        original_image_url=scan.file_path,
+        gradcam_overlay_url=latest.gradcam_result.heatmap_path,
+        model_version_label=latest.model_version.version_label,
+    )
