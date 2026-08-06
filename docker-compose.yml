@@ -15,5 +15,32 @@ services:
       timeout: 5s
       retries: 5
 
+  backend:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    environment:
+      DATABASE_URL: postgresql+psycopg2://visioret:visioret@db:5432/visioret
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./model:/app/model
+      - ./backend/media:/app/backend/media
+      - visioret_torch_cache:/root/.cache/torch
+    depends_on:
+      db:
+        condition: service_healthy
+
+  frontend:
+    build:
+      context: ./frontend
+      args:
+        VITE_API_BASE_URL: http://localhost:8000
+    ports:
+      - "5173:80"
+    depends_on:
+      - backend
+
 volumes:
   visioret_pgdata:
+  visioret_torch_cache:

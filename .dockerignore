@@ -1,0 +1,7 @@
+venv/
+frontend/node_modules/
+frontend/dist/
+data/
+.git/
+__pycache__/
+model/checkpoints/*.pth

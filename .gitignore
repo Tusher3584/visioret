@@ -12,3 +12,7 @@ backend/media/
 # excluded -- that one is intentionally tracked.
 model/checkpoints/*backup*.pth
 model/checkpoints/*resume_state*.pth
+
+# Frontend
+frontend/node_modules/
+frontend/dist/
