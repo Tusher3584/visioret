@@ -10,6 +10,7 @@ class HealthResponse(BaseModel):
     device: str
     checkpoint_loaded: bool
     classes: list[str]
+    ood_gate_active: bool
 
 
 class PredictionResponse(BaseModel):

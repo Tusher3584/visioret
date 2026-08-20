@@ -12,6 +12,7 @@ from model.inference import (
     predict,
     preprocess_image,
 )
+from model.ood_detector import check_is_oct, load_ood_stats
 
 ROOT_DIR = os.path.dirname(os.path.abspath(__file__))
 CHECKPOINT_PATH = os.path.join(ROOT_DIR, "model", "checkpoints", "resnet50_oct.pth")
@@ -28,6 +29,7 @@ def get_model():
 
 
 model, checkpoint_loaded, classes, device = get_model()
+ood_stats = load_ood_stats()
 
 st.title("Visioret: Explainable AI for Retinal OCT Disease Classification")
 st.caption("Upload an OCT scan to get a predicted disease class, a confidence score, and a Grad-CAM visual explanation.")
@@ -73,6 +75,15 @@ if image is not None:
         with st.spinner("Running inference..."):
             try:
                 image_tensor = preprocess_image(image)
+
+                is_oct, reason, ood_detail = check_is_oct(image, image_tensor, model, device, ood_stats)
+                if not is_oct:
+                    st.warning(
+                        "This doesn't look like a retinal OCT scan, so no diagnosis was made. "
+                        "Please upload an OCT B-scan image (JPEG/PNG)."
+                    )
+                    st.stop()
+
                 class_name, confidence, probs_dict = predict(model, image_tensor, device, class_names=classes)
                 class_index = classes.index(class_name)
                 heatmap = generate_gradcam(model, image_tensor, class_index, device)

@@ -24,6 +24,7 @@ from model.inference import (  # noqa: E402
     predict,
     preprocess_image,
 )
+from model.ood_detector import check_is_oct, load_ood_stats  # noqa: E402
 
 from backend.db.models import GradcamResult, ModelVersion, Prediction, Scan  # noqa: E402
 from backend.db.session import get_db  # noqa: E402
@@ -67,6 +68,7 @@ async def lifespan(app: FastAPI):
     model_state["device"] = device
     model_state["checkpoint_loaded"] = checkpoint_loaded
     model_state["classes"] = classes
+    model_state["ood_stats"] = load_ood_stats()
 
     from backend.db.session import SessionLocal
 
@@ -102,6 +104,7 @@ def health():
         device=model_state["device"].type,
         checkpoint_loaded=model_state["checkpoint_loaded"],
         classes=model_state["classes"],
+        ood_gate_active=model_state["ood_stats"] is not None,
     )
 
 
@@ -122,6 +125,17 @@ async def predict_endpoint(file: UploadFile = File(...), db: Session = Depends(g
     classes = model_state["classes"]
 
     image_tensor = preprocess_image(image)
+
+    is_oct, reason, detail = check_is_oct(image, image_tensor, model, device, model_state["ood_stats"])
+    if not is_oct:
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                "This doesn't look like a retinal OCT scan, so no diagnosis was made. "
+                "Please upload an OCT B-scan image (JPEG/PNG)."
+            ),
+        )
+
     class_name, confidence, probabilities = predict(model, image_tensor, device, class_names=classes)
     class_index = classes.index(class_name)
     heatmap = generate_gradcam(model, image_tensor, class_index, device)

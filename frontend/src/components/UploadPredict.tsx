@@ -9,12 +9,14 @@ export default function UploadPredict() {
   const [result, setResult] = useState<PredictionResponse | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [notOctWarning, setNotOctWarning] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   function handleFileChange(selected: File | null) {
     setFile(selected);
     setResult(null);
     setError(null);
+    setNotOctWarning(null);
     setPreviewUrl(selected ? URL.createObjectURL(selected) : null);
   }
 
@@ -22,11 +24,17 @@ export default function UploadPredict() {
     if (!file) return;
     setIsLoading(true);
     setError(null);
+    setNotOctWarning(null);
     try {
       const response = await predict(file);
       setResult(response);
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : "Something went wrong while running the prediction.");
+      if (err instanceof ApiError && err.status === 422) {
+        // Not a system failure -- the image was read fine, it just isn't an OCT scan.
+        setNotOctWarning(err.message);
+      } else {
+        setError(err instanceof ApiError ? err.message : "Something went wrong while running the prediction.");
+      }
     } finally {
       setIsLoading(false);
     }
@@ -62,6 +70,12 @@ export default function UploadPredict() {
           alt="Preview of the selected scan"
           className="max-w-xs rounded-lg border border-slate-200 dark:border-slate-700"
         />
+      )}
+
+      {notOctWarning && (
+        <div className="rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900 dark:border-amber-900 dark:bg-amber-950/50 dark:text-amber-300">
+          {notOctWarning}
+        </div>
       )}
 
       {error && (

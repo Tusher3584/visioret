@@ -106,3 +106,48 @@ Epoch 5/30 (755s) - train_loss: 0.0523 train_acc: 0.9835 - val_loss: 0.1975 val_
 Epoch 6/30 (293s) - train_loss: 0.0454 train_acc: 0.9850 - val_loss: 0.1951 val_acc: 0.9417 val_macro_f1: 0.9084 - lr: 5.00e-05
 No improvement for 5 epochs, stopping early.
 === Run finished. Best val_macro_f1: 0.9308 ===
+
+=== Run started 2026-08-20 09:50:53 (smoke_test=True) ===
+Using device: cuda
+Classes detected from folder names: ['CNV', 'DME', 'DRUSEN', 'NORMAL']
+Loaded existing patient split from I:\Coding\visioret\model\checkpoints\patient_split.json
+Patient split -> train: 4002 patients / val: 858 patients / test: 858 patients (test reserved, untouched during training)
+Train samples: 64 | Val samples: 32
+Train class counts: {'CNV': 16, 'DME': 16, 'DRUSEN': 16, 'NORMAL': 16}
+Trainable params: 22,071,300 / 23,516,228 (unfrozen: ('layer3.', 'layer4.', 'fc.'))
+Warm-starting from existing checkpoint I:\Coding\visioret\model\checkpoints\resnet50_oct.pth (prior val_macro_f1=0.9308); optimizer/scheduler start fresh.
+Epoch 1/1 (44s) - train_loss: 0.5531 train_acc: 0.8125 - val_loss: 0.1524 val_acc: 0.9375 val_macro_f1: 0.9389 - lr: 1.00e-04
+  -> new best val_macro_f1=0.9389, checkpoint saved
+=== Run finished. Best val_macro_f1: 0.9389 ===
+
+=== Run started 2026-08-20 09:52:37 (smoke_test=False) ===
+Using device: cuda
+Classes detected from folder names: ['CNV', 'DME', 'DRUSEN', 'NORMAL']
+Loaded existing patient split from I:\Coding\visioret\model\checkpoints\patient_split.json
+Patient split -> train: 4002 patients / val: 858 patients / test: 858 patients (test reserved, untouched during training)
+Train samples: 57708 | Val samples: 13630
+Train class counts: {'CNV': 24461, 'DME': 7941, 'DRUSEN': 6721, 'NORMAL': 18585}
+Trainable params: 22,071,300 / 23,516,228 (unfrozen: ('layer3.', 'layer4.', 'fc.'))
+Warm-starting from existing checkpoint I:\Coding\visioret\model\checkpoints\resnet50_oct.pth (prior val_macro_f1=0.9389); optimizer/scheduler start fresh.
+
+=== Run started 2026-08-20 10:52:24 (smoke_test=True) ===
+Using device: cuda
+Classes detected from folder names: ['CNV', 'DME', 'DRUSEN', 'NORMAL']
+Loaded existing patient split from I:\Coding\visioret\model\checkpoints\patient_split.json
+Patient split -> train: 4002 patients / val: 858 patients / test: 858 patients (test reserved, untouched during training)
+Train samples: 64 | Val samples: 32
+Train class counts: {'CNV': 16, 'DME': 16, 'DRUSEN': 16, 'NORMAL': 16}
+Trainable params: 22,071,300 / 23,516,228 (unfrozen: ('layer3.', 'layer4.', 'fc.'))
+Warm-starting from existing checkpoint I:\Coding\visioret\model\checkpoints\resnet50_oct.pth (prior val_macro_f1=0.9389); optimizer/scheduler start fresh.
+Epoch 1/1 (36s) - train_loss: 0.4669 train_acc: 0.8594 - val_loss: 0.1588 val_acc: 0.9375 val_macro_f1: 0.9389 - lr: 1.00e-04
+=== Run finished. Best val_macro_f1: 0.9389 ===
+
+=== Run started 2026-08-20 10:53:49 (smoke_test=False) ===
+Using device: cuda
+Classes detected from folder names: ['CNV', 'DME', 'DRUSEN', 'NORMAL']
+Loaded existing patient split from I:\Coding\visioret\model\checkpoints\patient_split.json
+Patient split -> train: 4002 patients / val: 858 patients / test: 858 patients (test reserved, untouched during training)
+Train samples: 57708 | Val samples: 13630
+Train class counts: {'CNV': 24461, 'DME': 7941, 'DRUSEN': 6721, 'NORMAL': 18585}
+Trainable params: 22,071,300 / 23,516,228 (unfrozen: ('layer3.', 'layer4.', 'fc.'))
+Warm-starting from existing checkpoint I:\Coding\visioret\model\checkpoints\resnet50_oct.pth (prior val_macro_f1=0.9389); optimizer/scheduler start fresh.

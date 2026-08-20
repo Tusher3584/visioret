@@ -29,6 +29,7 @@ from torchvision import transforms
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from model.dataset import OCTDataset, collect_samples, filter_by_patients  # noqa: E402
 from model.inference import IMAGENET_MEAN, IMAGENET_STD, load_model  # noqa: E402
+from model.oct_preprocessing import limit_worker_cv2_threads, preprocess_oct  # noqa: E402
 
 DATA_ROOT = r"G:\Download\archive\OCT2017"
 TRAIN_DIR = os.path.join(DATA_ROOT, "train")
@@ -57,6 +58,7 @@ def main():
 
     eval_transform = transforms.Compose(
         [
+            transforms.Lambda(preprocess_oct),
             transforms.Resize((224, 224)),
             transforms.ToTensor(),
             transforms.Normalize(mean=IMAGENET_MEAN, std=IMAGENET_STD),
@@ -70,7 +72,9 @@ def main():
     all_samples = collect_samples(TRAIN_DIR, VAL_DIR, TEST_DIR)
     test_samples = filter_by_patients(all_samples, test_patients)
     test_ds = OCTDataset(test_samples, class_names, eval_transform)
-    test_loader = DataLoader(test_ds, batch_size=BATCH_SIZE, shuffle=False, num_workers=2)
+    test_loader = DataLoader(
+        test_ds, batch_size=BATCH_SIZE, shuffle=False, num_workers=2, worker_init_fn=limit_worker_cv2_threads
+    )
 
     print(f"Evaluating on {len(test_ds)} patient-disjoint held-out test images, classes: {class_names}")
 

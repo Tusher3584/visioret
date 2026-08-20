@@ -38,6 +38,7 @@ from model.dataset import (  # noqa: E402
     patient_ids_of,
 )
 from model.inference import IMAGENET_MEAN, IMAGENET_STD, build_model  # noqa: E402
+from model.oct_preprocessing import limit_worker_cv2_threads, preprocess_oct  # noqa: E402
 
 DATA_ROOT = r"G:\Download\archive\OCT2017"
 TRAIN_DIR = os.path.join(DATA_ROOT, "train")
@@ -127,6 +128,7 @@ def _stratified_head(samples, class_names, per_class):
 def build_dataloaders(train_samples, val_samples, class_names, batch_size, smoke_test):
     train_transform = transforms.Compose(
         [
+            transforms.Lambda(preprocess_oct),
             transforms.Resize((224, 224)),
             transforms.RandomHorizontalFlip(),
             transforms.RandomRotation(5),
@@ -137,6 +139,7 @@ def build_dataloaders(train_samples, val_samples, class_names, batch_size, smoke
     )
     eval_transform = transforms.Compose(
         [
+            transforms.Lambda(preprocess_oct),
             transforms.Resize((224, 224)),
             transforms.ToTensor(),
             transforms.Normalize(mean=IMAGENET_MEAN, std=IMAGENET_STD),
@@ -151,10 +154,12 @@ def build_dataloaders(train_samples, val_samples, class_names, batch_size, smoke
     val_ds = OCTDataset(val_samples, class_names, eval_transform)
 
     train_loader = DataLoader(
-        train_ds, batch_size=batch_size, shuffle=True, num_workers=4, pin_memory=True, persistent_workers=True
+        train_ds, batch_size=batch_size, shuffle=True, num_workers=4, pin_memory=True,
+        persistent_workers=True, worker_init_fn=limit_worker_cv2_threads,
     )
     val_loader = DataLoader(
-        val_ds, batch_size=batch_size, shuffle=False, num_workers=2, pin_memory=True, persistent_workers=True
+        val_ds, batch_size=batch_size, shuffle=False, num_workers=2, pin_memory=True,
+        persistent_workers=True, worker_init_fn=limit_worker_cv2_threads,
     )
 
     train_counts = class_counts(train_samples, class_names)

@@ -9,6 +9,8 @@ import torch.nn as nn
 from PIL import Image
 from torchvision import models, transforms
 
+from model.oct_preprocessing import preprocess_oct
+
 CLASS_NAMES = ["CNV", "DME", "Drusen", "Normal"]
 
 IMAGENET_MEAN = [0.485, 0.456, 0.406]
@@ -16,6 +18,7 @@ IMAGENET_STD = [0.229, 0.224, 0.225]
 
 _preprocess = transforms.Compose(
     [
+        transforms.Lambda(preprocess_oct),
         transforms.Resize((224, 224)),
         transforms.ToTensor(),
         transforms.Normalize(mean=IMAGENET_MEAN, std=IMAGENET_STD),
@@ -64,8 +67,9 @@ def load_model(checkpoint_path, device):
 
 
 def preprocess_image(image: Image.Image) -> torch.Tensor:
-    """PIL image (any mode) -> normalized (1, 3, 224, 224) tensor."""
-    image = image.convert("RGB")
+    """PIL image (any mode) -> normalized (1, 3, 224, 224) tensor. Includes
+    OCT-specific preprocessing (denoise/flatten/crop) via preprocess_oct,
+    applied inside the _preprocess pipeline before resize/normalize."""
     tensor = _preprocess(image)
     return tensor.unsqueeze(0)
 
