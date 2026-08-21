@@ -45,21 +45,52 @@ OOD detection in the trained model's feature space instead — needs zero
 negative training data, no extra model/training run, and is a legitimate,
 well-established OOD technique in its own right (not just a workaround).
 
-## Checkpoint 2 — OCT-specific preprocessing pipeline 🔴 scientific rigor
+## Checkpoint 2 — OCT-specific preprocessing pipeline 🔴 scientific rigor ✅ DONE (negative result, documented)
 
 Addresses the "this pipeline isn't exclusive to OCT" critique. Generic
 resize+normalize works for any image; these steps are OCT-domain-specific.
 
-- [ ] Speckle-noise reduction (OCT's characteristic interferometry noise)
-- [ ] Retinal region cropping (isolate retina from black background)
-- [ ] B-scan flattening (correct eye-curvature tilt so retinal layers align
-      horizontally) — standard step in real OCT analysis pipelines
-- [ ] Apply consistently in both training (`train_full.py`) and inference
-      (`model/inference.py`) — mismatch between the two would silently break
-      everything
-- [ ] Retrain and re-evaluate on the held-out test set; compare against the
-      current 95.5%/92.8% macro-F1 baseline to confirm this actually helps
-      (not just adds complexity)
+- [x] Speckle-noise reduction (`cv2.fastNlMeansDenoising`) — OCT's
+      characteristic interferometry noise
+- [x] Retinal region cropping (isolate retina from black background)
+- [x] B-scan flattening (curve detection + column-wise shift to correct
+      eye-curvature tilt) — standard step in real OCT analysis pipelines.
+      All three implemented in `model/oct_preprocessing.py`, validated
+      visually and against 80 real sample images with zero errors.
+- [x] Wired into both training and inference, then evaluated end-to-end
+- [x] Retrain and re-evaluate on the held-out test set; compare against the
+      95.5%/92.8% macro-F1 baseline
+
+**Result: did not help — reverted, not used in the deployed pipeline.**
+A clean (uncontaminated) 5-epoch fine-tune warm-started from the baseline
+checkpoint peaked at val_macro_f1=0.9184 (epoch 1) and degraded from there;
+none of the 5 epochs beat the baseline's 0.9389. Most likely cause: the
+baseline's layer3/4/fc weights were tuned on raw-pixel statistics, and
+denoise/flatten/crop shift the input distribution enough that the
+warm-started weights need more than 5 epochs to re-adapt — not evidence
+the preprocessing itself is harmful, just unproven within this budget.
+Decision (deliberate, not a default): keep `model/oct_preprocessing.py` as
+tested, documented, working code (answers the "not OCT-specific" critique
+honestly — "we built and evaluated this, here's the evidence"), but do NOT
+wire it into the deployed model, since doing so without proof it helps
+would just be complexity for its own sake. `train_full.py`/`evaluate.py`/
+`model/inference.py` all reverted to plain resize+normalize, consistently.
+Revisit if Checkpoint 5's fuller retrain (fresh init, more patience) has
+room to test this properly instead of a patience-limited warm-start.
+
+**Two real bugs found and fixed along the way** (see git history around
+2026-08-20/21): (1) CPU oversubscription from `cv2`'s internal
+multithreading colliding with DataLoader worker processes, stalling
+training — fixed with `cv2.setNumThreads(1)` per worker
+(`limit_worker_cv2_threads`, kept — a real fix independent of whether
+`preprocess_oct` is used). (2) A checkpoint-contamination bug where
+`--smoke-test` runs shared `CHECKPOINT_PATH` with real runs: a lucky
+32-image smoke-test score (0.9389, coincidentally equal to the real
+baseline) got treated as the real run's baseline, so 5 real epochs of
+genuine progress could never register as "improvement," falsely triggering
+early stopping and blocking the checkpoint save. Fixed by giving
+`--smoke-test` a fully isolated `SMOKE_TEST_CHECKPOINT_PATH` that never
+touches the real one.
 
 ## Checkpoint 3 — Grad-CAM accuracy
 

@@ -38,7 +38,7 @@ from model.dataset import (  # noqa: E402
     patient_ids_of,
 )
 from model.inference import IMAGENET_MEAN, IMAGENET_STD, build_model  # noqa: E402
-from model.oct_preprocessing import limit_worker_cv2_threads, preprocess_oct  # noqa: E402
+from model.oct_preprocessing import limit_worker_cv2_threads  # noqa: E402
 
 DATA_ROOT = r"G:\Download\archive\OCT2017"
 TRAIN_DIR = os.path.join(DATA_ROOT, "train")
@@ -50,6 +50,14 @@ TEST_DIR = os.path.join(DATA_ROOT, "test")
 
 ROOT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 CHECKPOINT_PATH = os.path.join(ROOT_DIR, "model", "checkpoints", "resnet50_oct.pth")
+# --smoke-test must NEVER read or write CHECKPOINT_PATH. A smoke test's
+# val_macro_f1 is measured on ~32 images and can look spuriously high by
+# pure luck; if it shared the real checkpoint file, that inflated number
+# could become the "best to beat" for a subsequent real run, silently
+# preventing any genuinely-trained epoch from ever being saved as best
+# (this happened in practice -- a real 5-epoch run on the full dataset
+# never got its weights saved because none beat a lucky 32-image score).
+SMOKE_TEST_CHECKPOINT_PATH = os.path.join(ROOT_DIR, "model", "checkpoints", "_smoke_test_checkpoint.pth")
 RESUME_STATE_PATH = os.path.join(ROOT_DIR, "model", "checkpoints", "train_full_resume_state.pth")
 SPLIT_PATH = os.path.join(ROOT_DIR, "model", "checkpoints", "patient_split.json")
 LOG_PATH = os.path.join(ROOT_DIR, "model", "checkpoints", "train_full.log")
@@ -126,9 +134,16 @@ def _stratified_head(samples, class_names, per_class):
 
 
 def build_dataloaders(train_samples, val_samples, class_names, batch_size, smoke_test):
+    # Note: OCT-specific preprocessing (model/oct_preprocessing.py -- speckle
+    # denoise, B-scan flattening, retinal cropping) was built and evaluated
+    # here (see TODO.md Checkpoint 2). A clean, uncontaminated 5-epoch
+    # fine-tune against it did not beat the plain resize+normalize baseline,
+    # so it is intentionally NOT wired in here. Re-enabling it requires also
+    # updating model/inference.py and model/evaluate.py to match -- a
+    # mismatch between what training and inference feed the model silently
+    # produces wrong predictions.
     train_transform = transforms.Compose(
         [
-            transforms.Lambda(preprocess_oct),
             transforms.Resize((224, 224)),
             transforms.RandomHorizontalFlip(),
             transforms.RandomRotation(5),
@@ -139,7 +154,6 @@ def build_dataloaders(train_samples, val_samples, class_names, batch_size, smoke
     )
     eval_transform = transforms.Compose(
         [
-            transforms.Lambda(preprocess_oct),
             transforms.Resize((224, 224)),
             transforms.ToTensor(),
             transforms.Normalize(mean=IMAGENET_MEAN, std=IMAGENET_STD),
@@ -221,11 +235,15 @@ def main():
         print(f"Dataset not found at '{TRAIN_DIR}'. Check DATA_ROOT in this script.")
         return
 
+    checkpoint_path = SMOKE_TEST_CHECKPOINT_PATH if args.smoke_test else CHECKPOINT_PATH
+
     os.makedirs(os.path.dirname(LOG_PATH), exist_ok=True)
     with open(LOG_PATH, "a", encoding="utf-8") as log_file:
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         log(f"\n=== Run started {time.strftime('%Y-%m-%d %H:%M:%S')} (smoke_test={args.smoke_test}) ===", log_file)
         log(f"Using device: {device}", log_file)
+        if args.smoke_test:
+            log(f"Smoke test uses an isolated checkpoint path ({checkpoint_path}) -- never touches the real one.", log_file)
 
         class_names = sorted(list_class_dirs(TRAIN_DIR).keys())
         log(f"Classes detected from folder names: {class_names}", log_file)
@@ -281,13 +299,13 @@ def main():
                 f"best_macro_f1={best_macro_f1:.4f}, epochs_without_improvement={epochs_without_improvement}",
                 log_file,
             )
-        elif os.path.isfile(CHECKPOINT_PATH):
-            checkpoint = torch.load(CHECKPOINT_PATH, map_location=device)
+        elif os.path.isfile(checkpoint_path):
+            checkpoint = torch.load(checkpoint_path, map_location=device)
             if isinstance(checkpoint, dict) and "model_state_dict" in checkpoint and checkpoint.get("classes") == class_names:
                 model.load_state_dict(checkpoint["model_state_dict"])
                 best_macro_f1 = checkpoint.get("val_macro_f1", -1.0)
                 log(
-                    f"Warm-starting from existing checkpoint {CHECKPOINT_PATH} "
+                    f"Warm-starting from existing checkpoint {checkpoint_path} "
                     f"(prior val_macro_f1={best_macro_f1:.4f}); optimizer/scheduler start fresh.",
                     log_file,
                 )
@@ -332,10 +350,10 @@ def main():
             if val_macro_f1 > best_macro_f1:
                 best_macro_f1 = val_macro_f1
                 epochs_without_improvement = 0
-                os.makedirs(os.path.dirname(CHECKPOINT_PATH), exist_ok=True)
+                os.makedirs(os.path.dirname(checkpoint_path), exist_ok=True)
                 robust_torch_save(
                     {"model_state_dict": model.state_dict(), "classes": class_names, "val_macro_f1": best_macro_f1},
-                    CHECKPOINT_PATH,
+                    checkpoint_path,
                 )
                 log(f"  -> new best val_macro_f1={best_macro_f1:.4f}, checkpoint saved", log_file)
             else:

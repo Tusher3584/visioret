@@ -29,7 +29,7 @@ from torchvision import transforms
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from model.dataset import OCTDataset, collect_samples, filter_by_patients  # noqa: E402
 from model.inference import IMAGENET_MEAN, IMAGENET_STD, load_model  # noqa: E402
-from model.oct_preprocessing import limit_worker_cv2_threads, preprocess_oct  # noqa: E402
+from model.oct_preprocessing import limit_worker_cv2_threads  # noqa: E402
 
 DATA_ROOT = r"G:\Download\archive\OCT2017"
 TRAIN_DIR = os.path.join(DATA_ROOT, "train")
@@ -56,9 +56,11 @@ def main():
         print(f"No checkpoint found at '{CHECKPOINT_PATH}' -- run train_full.py first.")
         return
 
+    # Must match model/inference.py's preprocessing exactly -- this evaluates
+    # whatever CHECKPOINT_PATH actually was trained on. See the note in
+    # train_full.py's build_dataloaders() re: OCT-specific preprocessing.
     eval_transform = transforms.Compose(
         [
-            transforms.Lambda(preprocess_oct),
             transforms.Resize((224, 224)),
             transforms.ToTensor(),
             transforms.Normalize(mean=IMAGENET_MEAN, std=IMAGENET_STD),
