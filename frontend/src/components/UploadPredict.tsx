@@ -1,3 +1,4 @@
+import { AnimatePresence, motion } from "framer-motion";
 import { useRef, useState, type ReactNode } from "react";
 import { ApiError, predict } from "../api/client";
 import type { PredictionResponse } from "../api/types";
@@ -42,7 +43,12 @@ export default function UploadPredict() {
 
   return (
     <div className="flex flex-col gap-6">
-      <div className="flex flex-col gap-4 rounded-xl border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900">
+      <motion.div
+        initial={{ opacity: 0, y: 16 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.4, ease: "easeOut" }}
+        className="flex flex-col gap-4 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900"
+      >
         <div className="flex items-center gap-2">
           <StepBadge>1</StepBadge>
           <h2 className="text-lg font-semibold text-slate-900 dark:text-slate-50">Provide an image</h2>
@@ -55,54 +61,83 @@ export default function UploadPredict() {
             type="file"
             accept="image/jpeg,image/png"
             onChange={(e) => handleFileChange(e.target.files?.[0] ?? null)}
+            aria-label="Upload an OCT B-scan image, JPEG or PNG"
             className="block text-sm text-slate-600 file:mr-4 file:rounded-lg file:border-0 file:bg-blue-600 file:px-4 file:py-2 file:text-sm file:font-medium file:text-white hover:file:bg-blue-700 dark:text-slate-300"
           />
-          <button
+          <motion.button
             onClick={handlePredict}
             disabled={!file || isLoading}
+            aria-busy={isLoading}
+            whileHover={file && !isLoading ? { scale: 1.03 } : undefined}
+            whileTap={file && !isLoading ? { scale: 0.97 } : undefined}
             className="rounded-lg bg-slate-900 px-5 py-2 text-sm font-semibold text-white transition disabled:cursor-not-allowed disabled:opacity-40 dark:bg-slate-100 dark:text-slate-900"
           >
-            {isLoading ? "Running inference..." : "Predict"}
-          </button>
+            {isLoading ? "Analyzing..." : "Predict"}
+          </motion.button>
         </div>
 
         {previewUrl && !result && (
-          <img
-            src={previewUrl}
-            alt="Preview of the selected scan"
-            className="max-w-xs rounded-lg border border-slate-200 dark:border-slate-700"
-          />
-        )}
-      </div>
-
-      {notOctWarning && (
-        <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900 dark:border-amber-900 dark:bg-amber-950/50 dark:text-amber-300">
-          {notOctWarning}
-        </div>
-      )}
-
-      {error && (
-        <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800 dark:border-red-900 dark:bg-red-950/50 dark:text-red-300">
-          {error}
-        </div>
-      )}
-
-      {result && (
-        <div className="flex flex-col gap-4">
-          <div className="flex items-center gap-2">
-            <StepBadge>2</StepBadge>
-            <h2 className="text-lg font-semibold text-slate-900 dark:text-slate-50">Results</h2>
+          <div className="relative w-fit max-w-xs overflow-hidden rounded-lg border border-slate-200 dark:border-slate-700">
+            <img src={previewUrl} alt="Preview of the selected scan" className="block max-w-xs" />
+            {isLoading && (
+              <div className="absolute inset-0 overflow-hidden">
+                <div className="animate-scan-sweep absolute inset-x-0 h-1/3 bg-gradient-to-b from-transparent via-blue-400/40 to-transparent" />
+                <div className="absolute inset-0 bg-blue-500/5" />
+              </div>
+            )}
           </div>
-          <ScanResult
-            originalImageUrl={result.original_image_url}
-            gradcamOverlayUrl={result.gradcam_overlay_url}
-            predictedClass={result.predicted_class}
-            confidence={result.confidence}
-            probabilities={result.probabilities}
-            explanation={result.explanation}
-          />
-        </div>
-      )}
+        )}
+      </motion.div>
+
+      <AnimatePresence>
+        {notOctWarning && (
+          <motion.div
+            initial={{ opacity: 0, height: 0 }}
+            animate={{ opacity: 1, height: "auto" }}
+            exit={{ opacity: 0, height: 0 }}
+            role="alert"
+            className="overflow-hidden rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900 dark:border-amber-900 dark:bg-amber-950/50 dark:text-amber-300"
+          >
+            {notOctWarning}
+          </motion.div>
+        )}
+
+        {error && (
+          <motion.div
+            initial={{ opacity: 0, height: 0 }}
+            animate={{ opacity: 1, height: "auto" }}
+            exit={{ opacity: 0, height: 0 }}
+            role="alert"
+            className="overflow-hidden rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800 dark:border-red-900 dark:bg-red-950/50 dark:text-red-300"
+          >
+            {error}
+          </motion.div>
+        )}
+
+        {result && (
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.4, ease: "easeOut" }}
+            className="flex flex-col gap-4"
+          >
+            <div className="flex items-center gap-2">
+              <StepBadge>2</StepBadge>
+              <h2 className="text-lg font-semibold text-slate-900 dark:text-slate-50">Results</h2>
+            </div>
+            <ScanResult
+              scanId={result.scan_id}
+              originalImageUrl={result.original_image_url}
+              gradcamOverlayUrl={result.gradcam_overlay_url}
+              predictedClass={result.predicted_class}
+              confidence={result.confidence}
+              probabilities={result.probabilities}
+              explanation={result.explanation}
+              feedback={null}
+            />
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }

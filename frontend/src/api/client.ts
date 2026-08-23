@@ -1,6 +1,19 @@
-import type { EvaluationMetric, HealthResponse, PredictionResponse, ScanDetail, ScanSummary } from "./types";
+import type {
+  EvaluationMetric,
+  Feedback,
+  FeedbackCreate,
+  HealthResponse,
+  LoginRequest,
+  PredictionResponse,
+  RegisterRequest,
+  ScanDetail,
+  ScanSummary,
+  TokenResponse,
+  User,
+} from "./types";
 
 const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL as string | undefined) ?? "http://localhost:8000";
+const TOKEN_STORAGE_KEY = "visioret_token";
 
 export class ApiError extends Error {
   status: number;
@@ -9,6 +22,23 @@ export class ApiError extends Error {
     super(message);
     this.status = status;
   }
+}
+
+export function getToken(): string | null {
+  return localStorage.getItem(TOKEN_STORAGE_KEY);
+}
+
+export function setToken(token: string): void {
+  localStorage.setItem(TOKEN_STORAGE_KEY, token);
+}
+
+export function clearToken(): void {
+  localStorage.removeItem(TOKEN_STORAGE_KEY);
+}
+
+function authHeaders(): Record<string, string> {
+  const token = getToken();
+  return token ? { Authorization: `Bearer ${token}` } : {};
 }
 
 async function handleResponse<T>(response: Response): Promise<T> {
@@ -34,11 +64,35 @@ export async function fetchHealth(): Promise<HealthResponse> {
   return handleResponse<HealthResponse>(response);
 }
 
+export async function register(body: RegisterRequest): Promise<TokenResponse> {
+  const response = await fetch(`${API_BASE_URL}/api/auth/register`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  return handleResponse<TokenResponse>(response);
+}
+
+export async function login(body: LoginRequest): Promise<TokenResponse> {
+  const response = await fetch(`${API_BASE_URL}/api/auth/login`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  return handleResponse<TokenResponse>(response);
+}
+
+export async function fetchMe(): Promise<User> {
+  const response = await fetch(`${API_BASE_URL}/api/auth/me`, { headers: authHeaders() });
+  return handleResponse<User>(response);
+}
+
 export async function predict(file: File): Promise<PredictionResponse> {
   const formData = new FormData();
   formData.append("file", file);
   const response = await fetch(`${API_BASE_URL}/api/predict`, {
     method: "POST",
+    headers: authHeaders(),
     body: formData,
   });
   return handleResponse<PredictionResponse>(response);
@@ -57,4 +111,13 @@ export async function getScan(scanId: number): Promise<ScanDetail> {
 export async function fetchMetrics(): Promise<EvaluationMetric[]> {
   const response = await fetch(`${API_BASE_URL}/api/metrics`);
   return handleResponse<EvaluationMetric[]>(response);
+}
+
+export async function submitFeedback(scanId: number, body: FeedbackCreate): Promise<Feedback> {
+  const response = await fetch(`${API_BASE_URL}/api/scans/${scanId}/feedback`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json", ...authHeaders() },
+    body: JSON.stringify(body),
+  });
+  return handleResponse<Feedback>(response);
 }

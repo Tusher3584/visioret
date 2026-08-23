@@ -1,3 +1,27 @@
+export interface User {
+  id: number;
+  name: string;
+  email: string;
+  role: string;
+}
+
+export interface RegisterRequest {
+  name: string;
+  email: string;
+  password: string;
+}
+
+export interface LoginRequest {
+  email: string;
+  password: string;
+}
+
+export interface TokenResponse {
+  access_token: string;
+  token_type: string;
+  user: User;
+}
+
 export interface HealthResponse {
   status: string;
   device: string;
@@ -23,6 +47,19 @@ export interface ScanSummary {
   original_image_url: string;
 }
 
+export interface Feedback {
+  is_correct: boolean;
+  corrected_class: string | null;
+  comment: string | null;
+  reviewed_at: string;
+}
+
+export interface FeedbackCreate {
+  is_correct: boolean;
+  corrected_class?: string | null;
+  comment?: string | null;
+}
+
 export interface ScanDetail {
   scan_id: number;
   uploaded_at: string;
@@ -33,6 +70,7 @@ export interface ScanDetail {
   gradcam_overlay_url: string;
   explanation: string;
   model_version_label: string;
+  feedback: Feedback | null;
 }
 
 export interface PerClassMetric {

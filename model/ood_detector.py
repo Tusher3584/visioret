@@ -7,13 +7,15 @@ NORMAL. Two stages, cheapest first:
 
 1. Grayscale heuristic: real OCT B-scans are near-grayscale (R=G=B per
    pixel). A color photo fails this immediately, before any model runs.
-2. Feature-space distance: extract the trained disease model's own
-   penultimate-layer features (reusing the model already loaded for
-   prediction -- no extra network) and measure how far the image sits from
-   the centroid of real OCT training images in that feature space. This is
-   a standard OOD technique (distance-based detection in a pretrained
-   feature space) and needs no negative/non-OCT training data at all --
-   only statistics computed from OCT images we already have.
+2. CLIP zero-shot semantic check (model/clip_ood.py): does this look like
+   an OCT scan vs. a photo/X-ray/abstract image, per CLIP's general visual
+   understanding. Doesn't need calibration against any specific OCT
+   dataset, so it generalizes to sources it's never seen -- unlike the
+   feature-distance approach previously used here (still present below as
+   compute_ood_stats/ood_distance, but no longer wired into check_is_oct;
+   kept for reference since it's a legitimate technique in general, just
+   not one that held up against multi-source data in practice -- see
+   TODO.md and model/clip_ood.py's docstring for what went wrong and why).
 """
 
 import os
@@ -126,27 +128,25 @@ def ood_distance(features: np.ndarray, stats: dict) -> float:
     return float(np.sqrt((((features - stats["centroid"]) / stats["std"]) ** 2)).mean())
 
 
-def check_is_oct(image: Image.Image, image_tensor, model, device, ood_stats: dict | None):
-    """Runs all three stages, cheapest first. Returns (is_oct: bool, reason: str, detail: dict)."""
+def check_is_oct(image: Image.Image, clip_model, clip_processor, device):
+    """Two stages, cheapest first. Returns (is_oct: bool, reason: str, detail: dict).
+
+    Previously had a third stage here (feature-space distance from a
+    Kermany-only calibrated centroid, see compute_ood_stats/ood_distance
+    above) -- retired because it was rejecting genuine OCT scans from
+    other sources (Noor Eye Hospital, specifically) purely because they
+    sat outside a calibration set that only ever saw Kermany's images.
+    Replaced with a CLIP zero-shot check (model/clip_ood.py), which
+    doesn't need per-dataset calibration and generalizes to sources it's
+    never seen -- see that module's docstring for validation numbers.
+    """
     if not is_grayscale_heuristic(image):
         return False, "not_grayscale", {"stage": "color_heuristic"}
 
-    if ood_stats is None:
-        # Stats not computed yet -- degrade gracefully rather than block the app.
-        return True, "ood_stats_unavailable", {"stage": "skipped"}
+    from model.clip_ood import clip_is_oct
 
-    if not is_dark_enough_heuristic(image, ood_stats["brightness_threshold"]):
-        return False, "too_bright_for_oct", {
-            "stage": "brightness_heuristic",
-            "brightness": mean_brightness(image),
-            "threshold": ood_stats["brightness_threshold"],
-        }
-
-    features = extract_features(model, image_tensor, device)
-    distance = ood_distance(features, ood_stats)
-    is_oct = distance <= ood_stats["threshold"]
-    return is_oct, ("within_distribution" if is_oct else "feature_distance_too_high"), {
-        "stage": "feature_distance",
-        "distance": distance,
-        "threshold": ood_stats["threshold"],
+    is_oct, oct_probability = clip_is_oct(image, clip_model, clip_processor, device)
+    return is_oct, ("within_distribution" if is_oct else "clip_semantic_check_failed"), {
+        "stage": "clip_semantic_check",
+        "oct_probability": oct_probability,
     }

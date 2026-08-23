@@ -30,6 +30,45 @@ class EvaluationMetricResponse(BaseModel):
     model_version_label: str
 
 
+class FeedbackCreate(BaseModel):
+    # is_correct=True means the prediction was right -- corrected_class is
+    # only meaningful (and required) when is_correct is False.
+    is_correct: bool
+    corrected_class: str | None = None
+    comment: str | None = None
+
+
+class FeedbackResponse(BaseModel):
+    is_correct: bool
+    corrected_class: str | None
+    comment: str | None
+    reviewed_at: datetime
+
+
+class RegisterRequest(BaseModel):
+    name: str
+    email: str
+    password: str
+
+
+class LoginRequest(BaseModel):
+    email: str
+    password: str
+
+
+class UserResponse(BaseModel):
+    id: int
+    name: str
+    email: str
+    role: str
+
+
+class TokenResponse(BaseModel):
+    access_token: str
+    token_type: str = "bearer"
+    user: UserResponse
+
+
 class HealthResponse(BaseModel):
     status: str
     device: str
@@ -66,3 +105,4 @@ class ScanDetail(BaseModel):
     gradcam_overlay_url: str
     explanation: str
     model_version_label: str
+    feedback: FeedbackResponse | None = None

@@ -21,12 +21,18 @@ services:
       dockerfile: backend/Dockerfile
     environment:
       DATABASE_URL: postgresql+psycopg2://visioret:visioret@db:5432/visioret
+      # Dev-only secret, fine to commit here (mirrors DATABASE_URL's own
+      # hardcoded dev credentials above) -- a real deployment must override
+      # this via a real secret store, never a committed value. See
+      # backend/auth.py.
+      JWT_SECRET_KEY: af84dfee2ddbd9c73b283ab7abe5de725b990abbf5169c0a25c2543261b67299
     ports:
       - "8000:8000"
     volumes:
       - ./model:/app/model
       - ./backend/media:/app/backend/media
       - visioret_torch_cache:/root/.cache/torch
+      - visioret_hf_cache:/root/.cache/huggingface
     depends_on:
       db:
         condition: service_healthy
@@ -44,3 +50,4 @@ services:
 volumes:
   visioret_pgdata:
   visioret_torch_cache:
+  visioret_hf_cache:

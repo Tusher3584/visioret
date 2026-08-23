@@ -5,7 +5,7 @@ EVALUATION_METRIC).
 
 from datetime import datetime, timezone
 
-from sqlalchemy import DateTime, Float, ForeignKey, Integer, JSON, String
+from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Integer, JSON, String
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
 
@@ -23,6 +23,7 @@ class User(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     name: Mapped[str] = mapped_column(String(120))
     email: Mapped[str] = mapped_column(String(255), unique=True)
+    password_hash: Mapped[str] = mapped_column(String(255))
     role: Mapped[str] = mapped_column(String(30), default="researcher")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
 
@@ -93,6 +94,10 @@ class Feedback(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     prediction_id: Mapped[int] = mapped_column(ForeignKey("predictions.id"), unique=True)
     reviewed_by: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
+    # Distinguishes "confirmed correct" (True, corrected_class NULL) from
+    # "flagged incorrect" (False, corrected_class set) -- presence of a
+    # Feedback row alone means "reviewed" either way.
+    is_correct: Mapped[bool] = mapped_column(Boolean)
     corrected_class: Mapped[str | None] = mapped_column(String(30), nullable=True)
     comment: Mapped[str | None] = mapped_column(String(1000), nullable=True)
     reviewed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)

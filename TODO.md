@@ -45,6 +45,28 @@ OOD detection in the trained model's feature space instead — needs zero
 negative training data, no extra model/training run, and is a legitimate,
 well-established OOD technique in its own right (not just a workaround).
 
+**Update 2026-08-23 — the distance-based stage above had a real bug, found
+by the user testing real Noor Eye Hospital CNV images: 3 of 5 random ones
+were wrongly rejected as "not OCT."** Root cause confirmed with hard
+evidence: the feature-distance threshold was calibrated on 1,600
+Kermany-only images (`compute_ood_stats.py`), so any genuinely valid OCT
+scan from a different source/scanner could sit far enough from that
+narrow centroid to get rejected — exactly the generalization gap
+Checkpoint 5 was supposed to have addressed, except the OOD gate was never
+recalibrated alongside the classifier. **Fixed by replacing the
+feature-distance stage with a CLIP zero-shot semantic check**
+(`model/clip_ood.py`) — "does this look like an OCT scan" per CLIP's
+general visual understanding, which needs no per-dataset calibration at
+all and generalizes to sources it's never seen. Validated: 45/45 correct
+across 30 real OCT images spanning all 4 sources + 15 real non-OCT photos,
+including the exact 2 Noor images that were failing before, both fixed.
+Re-verified end-to-end through the live API: 10/10 additional random Noor
+CNV images now accepted, a real non-OCT photo still correctly rejected
+(422). The old feature-distance code is left in `model/ood_detector.py`
+for reference (documented as retired, not deleted) since it's a legitimate
+technique that just didn't hold up in practice against multi-source data.
+Grayscale heuristic kept as a cheap pre-filter before CLIP runs.
+
 ## Checkpoint 2 — OCT-specific preprocessing pipeline 🔴 scientific rigor ✅ DONE (negative result, documented)
 
 Addresses the "this pipeline isn't exclusive to OCT" critique. Generic
@@ -252,6 +274,29 @@ enough that the old distance thresholds no longer fit. Recalibrated via
 after every retrain going forward -- the OOD detector is tied to the
 specific checkpoint's feature space, not just an independent module.
 
+**Round 2 (2026-08-23) — user feedback: still looked too plain/static for
+a 4th-year defense.** Added a real animation layer (`framer-motion`):
+route-change fade transitions (`App.tsx`), a sliding pill nav indicator
+using `layoutId` (`Nav.tsx`), staggered entrance reveals on
+`ScanResult.tsx`/`ScanHistory.tsx`, animated probability-bar fill-in and
+count-up numbers (new `AnimatedNumber.tsx`, used for confidence % and the
+metrics stat tiles), hover/tap micro-interactions on buttons and cards,
+and a themed scan-line sweep animation over the preview image during
+inference (reinforces the OCT-scanning concept rather than a generic
+spinner). Also added an ambient drifting-gradient background to the shell
+for visual depth. Tried the newer unified `motion` package first; when its
+declarative `initial`/`animate` props appeared frozen during testing,
+traced it to `document.hidden` being `true` in this session's Browser pane
+(confirmed via `document.visibilityState`) -- Framer Motion's engine
+intentionally pauses its rAF-driven animations on hidden/backgrounded
+tabs, which is exactly this pane's persistent state all session (matches
+every earlier "Browser pane is not displayed" screenshot failure). Not a
+code bug; switched to the `framer-motion` package anyway (same maintainer,
+more battle-tested history) since the two behaved identically and there
+was no reason not to. **Could not get final visual (screenshot)
+confirmation in this session for that same reason -- user should verify
+the live animations directly at localhost:5173.**
+
 ## Checkpoint 7 — Evaluation metrics integrated into the app ✅ DONE
 
 - [x] Extended `EvaluationMetric` (migration `263d6fc8f6f4`) with
@@ -277,26 +322,99 @@ specific checkpoint's feature space, not just an independent module.
       Verified against the live Docker stack with real data from both
       dataset splits.
 
-## Checkpoint 8 — Feedback / correction workflow
+## Checkpoint 8 — Feedback / correction workflow ✅ DONE
 
-- [ ] API endpoint(s) for submitting a correction against a prediction
-      (the `Feedback` table already exists, unused)
-- [ ] Frontend: a way to flag/correct a prediction from the scan detail view
+- [x] Extended `Feedback` (migration `53b8feed0825`) with an `is_correct`
+      boolean -- the original schema only had `corrected_class` (nullable),
+      which couldn't distinguish "confirmed correct" from "never reviewed."
+      `PUT /api/scans/{scan_id}/feedback` upserts against the scan's latest
+      prediction (one review per prediction, resubmitting replaces it);
+      validates `corrected_class` is provided and is one of the deployed
+      model's classes when `is_correct=false`.
+- [x] Frontend: `FeedbackForm.tsx`, wired into `ScanResult.tsx` so it shows
+      on both the fresh-predict flow and the scan history detail view.
+      Correct/Incorrect buttons, a class dropdown + optional comment for
+      corrections, and an existing-review state with a "change my review"
+      edit path. Verified end-to-end against the live Docker stack: submit
+      correct, submit incorrect with a correction + comment, validation
+      error on a missing correction, resubmit-overwrites behavior, and the
+      edit/cancel UI flow.
 
-## Checkpoint 9 — User accounts
+## Checkpoint 9 — User accounts ✅ DONE
 
-- [ ] Decide how much auth is actually needed (simple role-based accounts,
-      not a full identity provider — per earlier scope note)
-- [ ] Backend: registration/login, associate scans with the real `user_id`
-      (currently always `NULL`)
-- [ ] Frontend: login/account UI, role-appropriate views if relevant
+Scope decision: real minimal auth -- bcrypt-hashed passwords + JWT, no
+email verification/password reset/OAuth. Login is optional throughout;
+predicting and giving feedback both still work anonymously (`user_id`/
+`reviewed_by` stay NULL), matching this being a demo/research tool rather
+than a gated clinical system.
 
-## Checkpoint 10 — Accessibility pass
+- [x] Backend: `backend/auth.py` (bcrypt hashing, JWT create/decode,
+      `get_current_user` / `get_current_user_optional` FastAPI
+      dependencies). New `users.password_hash` column (migration
+      `e96f48ad79fb`). `POST /api/auth/register`, `POST /api/auth/login`,
+      `GET /api/auth/me`. `JWT_SECRET_KEY` from environment (`.env` for
+      host, `docker-compose.yml` for the container) -- deliberately no
+      hardcoded fallback in code, so a missing key fails loudly rather than
+      silently signing tokens with a guessable default.
+- [x] `/api/predict` and `PUT /api/scans/{id}/feedback` now accept an
+      optional bearer token and attach `scan.user_id` / `feedback.
+      reviewed_by` when present.
+- [x] Frontend: `AuthContext.tsx` (token in localStorage, fetches `/me` on
+      load), `AuthPage.tsx` (combined login/register form at `/login`),
+      `Nav.tsx` shows "Log in" or "{name} · Log out".
+- [x] Verified end-to-end against the live Docker stack: register, duplicate-
+      email rejection, wrong-password rejection, login, `/me` with/without
+      token, authenticated predict correctly sets `scan.user_id`,
+      authenticated feedback correctly sets `feedback.reviewed_by`, logout
+      clears the token and reverts the nav.
 
-- [ ] Semantic HTML / ARIA review
-- [ ] Keyboard navigation check
-- [ ] Contrast check (light + dark mode)
-- [ ] Focus states visible throughout
+## Checkpoint 10 — Accessibility pass ✅ DONE (incl. mobile)
+
+- [x] Semantic HTML / ARIA review across every component. Fixes made:
+      section labels that were plain `<span>`s (Predicted class, Why this
+      region?, Was this prediction correct?) promoted to real `<h3>`
+      elements, nested correctly under each page's `<h2>` -- verified the
+      full site now has a clean h1>h2>h3 outline, no skipped levels.
+      Added a page-level `<h2>` to History and Metrics, which had none.
+      `ModelMetrics.tsx`'s tables got `scope="col"`/`scope="row"` on all
+      header cells and a real `<caption>` for the confusion matrix (was a
+      sibling `<span>` -- captions are auto-announced when a screen reader
+      lands on the table, a sibling span isn't). The decorative probability
+      bar fill (`ProbabilityBars.tsx`) marked `aria-hidden` since its value
+      is already in adjacent visible text -- avoids double-announcing.
+      The file input (`UploadPredict.tsx`) had no accessible name (the
+      nearby `<p>` doesn't count as a label) -- added `aria-label`. Every
+      dynamic error/warning message across all 6 components that show one
+      now has `role="alert"` so it's announced when it appears, not just
+      when a screen reader happens to scan past it.
+- [x] Keyboard navigation: verified every click handler in the codebase is
+      attached to a real `<button>` (grepped for `onClick` -- zero
+      `<div onClick>`/`<span onClick>` patterns), so Tab focus and
+      Enter/Space activation work by default with zero custom JS needed.
+      Confirmed no `outline-none`/`focus:outline-none` anywhere in the
+      codebase (grepped), and directly verified via a real Tab keypress
+      that focus-visible correctly triggers the browser's native outline
+      on a nav link.
+- [x] Contrast check, computed precisely rather than eyeballed: wrote an
+      OKLCH/OKLab -> linear-sRGB -> WCAG relative-luminance converter (the
+      live site's computed styles come back in oklch()/oklab(), not rgb(),
+      since Tailwind v4's palette is natively OKLCH) and measured every
+      text/background pairing the class-color system produces, including
+      the translucent dark-mode badges (blended against the actual card
+      background, not treated as opaque). All 8 badge combinations (4
+      classes x light/dark) plus the confidence badge and predicted-class
+      heading text passed WCAG AA (>=4.5:1) with real margin -- the
+      tightest was 6.41:1, most were 6.5-8.4:1.
+- [x] Focus states: confirmed visible (see keyboard nav above) -- browser
+      default outline is untouched, nothing suppresses it.
+- [x] Mobile (explicitly requested, beyond the original checklist):
+      verified zero horizontal overflow at 375px width on every page
+      (Predict, History, Scan Detail, Metrics) including the wide
+      per-class and confusion-matrix tables, which correctly scroll inside
+      their own `overflow-x-auto` container instead of breaking the page.
+      Confirmed the nav header's `flex-col sm:flex-row` correctly stacks
+      below the sm breakpoint with no element overlap, checked both
+      logged-out and logged-in (longer username text) states.
 
 ## Checkpoint 11 — Deployment ⚪ stretch, do last
 

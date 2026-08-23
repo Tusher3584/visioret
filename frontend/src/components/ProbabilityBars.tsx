@@ -1,3 +1,4 @@
+import { motion } from "framer-motion";
 import { classColors } from "../lib/classColors";
 
 interface Props {
@@ -10,7 +11,7 @@ export default function ProbabilityBars({ probabilities, predictedClass }: Props
 
   return (
     <div className="flex flex-col gap-2.5">
-      {entries.map(([className, value]) => {
+      {entries.map(([className, value], index) => {
         const isPredicted = className === predictedClass;
         const colors = classColors(className);
         return (
@@ -20,10 +21,12 @@ export default function ProbabilityBars({ probabilities, predictedClass }: Props
             >
               {className}
             </span>
-            <div className="h-2.5 flex-1 overflow-hidden rounded-full bg-slate-100 dark:bg-slate-800">
-              <div
-                className={`h-full rounded-full transition-all ${isPredicted ? colors.bar : "bg-slate-300 dark:bg-slate-600"}`}
-                style={{ width: `${Math.max(value * 100, 1)}%` }}
+            <div aria-hidden="true" className="h-2.5 flex-1 overflow-hidden rounded-full bg-slate-100 dark:bg-slate-800">
+              <motion.div
+                initial={{ width: 0 }}
+                animate={{ width: `${Math.max(value * 100, 1)}%` }}
+                transition={{ duration: 0.6, delay: index * 0.06, ease: "easeOut" }}
+                className={`h-full rounded-full ${isPredicted ? colors.bar : "bg-slate-300 dark:bg-slate-600"}`}
               />
             </div>
             <span className="w-14 shrink-0 text-right font-mono text-sm tabular-nums text-slate-500 dark:text-slate-400">

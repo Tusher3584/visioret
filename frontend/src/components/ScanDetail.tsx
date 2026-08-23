@@ -23,7 +23,7 @@ export default function ScanDetail() {
       </Link>
 
       {error && (
-        <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800 dark:border-red-900 dark:bg-red-950/50 dark:text-red-300">
+        <div role="alert" className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800 dark:border-red-900 dark:bg-red-950/50 dark:text-red-300">
           {error}
         </div>
       )}
@@ -39,12 +39,14 @@ export default function ScanDetail() {
             <span className="font-mono text-xs text-slate-400 dark:text-slate-500">Model: {scan.model_version_label}</span>
           </div>
           <ScanResult
+            scanId={scan.scan_id}
             originalImageUrl={scan.original_image_url}
             gradcamOverlayUrl={scan.gradcam_overlay_url}
             predictedClass={scan.predicted_class}
             confidence={scan.confidence}
             probabilities={scan.probabilities}
             explanation={scan.explanation}
+            feedback={scan.feedback}
           />
         </>
       )}
