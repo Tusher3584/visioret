@@ -1,4 +1,4 @@
-import type { HealthResponse, PredictionResponse, ScanDetail, ScanSummary } from "./types";
+import type { EvaluationMetric, HealthResponse, PredictionResponse, ScanDetail, ScanSummary } from "./types";
 
 const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL as string | undefined) ?? "http://localhost:8000";
 
@@ -52,4 +52,9 @@ export async function listScans(): Promise<ScanSummary[]> {
 export async function getScan(scanId: number): Promise<ScanDetail> {
   const response = await fetch(`${API_BASE_URL}/api/scans/${scanId}`);
   return handleResponse<ScanDetail>(response);
+}
+
+export async function fetchMetrics(): Promise<EvaluationMetric[]> {
+  const response = await fetch(`${API_BASE_URL}/api/metrics`);
+  return handleResponse<EvaluationMetric[]>(response);
 }

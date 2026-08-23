@@ -252,13 +252,30 @@ enough that the old distance thresholds no longer fit. Recalibrated via
 after every retrain going forward -- the OOD detector is tied to the
 specific checkpoint's feature space, not just an independent module.
 
-## Checkpoint 7 — Evaluation metrics integrated into the app
+## Checkpoint 7 — Evaluation metrics integrated into the app ✅ DONE
 
-- [ ] Backend: write `evaluate.py` results into the `EvaluationMetric` table
-      (currently defined in the schema but never populated)
-- [ ] API endpoint to serve model evaluation metrics
-- [ ] Frontend: a view showing accuracy/precision/recall/F1/confusion matrix
-      — currently these only exist as offline files nobody using the app can see
+- [x] Extended `EvaluationMetric` (migration `263d6fc8f6f4`) with
+      `per_class_metrics` and `confusion_matrix` JSON columns +
+      `evaluated_at`, beyond the original macro-only columns -- needed for
+      a genuinely useful view, not just a headline number.
+- [x] `model/evaluate.py` and `model/evaluate_cross_dataset.py` now write
+      their results into the DB (via the new best-effort
+      `backend/db/write_evaluation.py` -- never raises, so the scripts
+      still work standalone / print / save `.txt`+`.png` even if Postgres
+      isn't reachable) under `dataset_split="kermany_test"` and
+      `"external_test"` respectively. Extracted `get_or_create_model_version`
+      out of `backend/main.py` into `backend/db/model_version.py` so both
+      the API and the eval scripts share it without `model/` importing the
+      FastAPI app.
+- [x] New `GET /api/metrics` endpoint, returns one entry per evaluated
+      dataset split for the currently deployed model version.
+- [x] New frontend `/metrics` page (`ModelMetrics.tsx` + nav link):
+      headline accuracy/precision/recall/F1 stat tiles, a per-class table
+      with the same class-color dots as the rest of the app, and a
+      confusion matrix rendered as a real table with intensity-tinted
+      cells (blue = correct/diagonal, rose = errors, both scaled by count).
+      Verified against the live Docker stack with real data from both
+      dataset splits.
 
 ## Checkpoint 8 — Feedback / correction workflow
 

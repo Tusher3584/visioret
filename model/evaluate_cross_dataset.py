@@ -36,6 +36,7 @@ from PIL import Image
 from sklearn.metrics import ConfusionMatrixDisplay, classification_report, confusion_matrix
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from backend.db.write_evaluation import write_evaluation_metric  # noqa: E402
 from model.dataset import collect_external_samples, filter_by_patients  # noqa: E402
 from model.inference import load_model, predict, preprocess_image  # noqa: E402
 
@@ -43,6 +44,7 @@ ROOT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 CHECKPOINT_PATH = os.path.join(ROOT_DIR, "model", "checkpoints", "resnet50_oct.pth")
 EXTERNAL_SPLIT_PATH = os.path.join(ROOT_DIR, "model", "checkpoints", "external_patient_split.json")
 OUT_DIR = os.path.join(ROOT_DIR, "model", "checkpoints")
+DATASET_SPLIT = "external_test"
 
 
 def collect_test_only_samples():
@@ -108,7 +110,7 @@ def evaluate_dataset(name, samples, model, device, classes):
 
 def main():
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    model, checkpoint_loaded, classes, _val_macro_f1 = load_model(CHECKPOINT_PATH, device)
+    model, checkpoint_loaded, classes, val_macro_f1 = load_model(CHECKPOINT_PATH, device)
     if not checkpoint_loaded:
         print(f"No checkpoint found at '{CHECKPOINT_PATH}'.")
         return
@@ -150,6 +152,37 @@ def main():
         fig.tight_layout()
         fig.savefig(os.path.join(OUT_DIR, "cross_dataset_confusion_matrix.png"), dpi=150)
         print(f"Confusion matrix saved to {os.path.join(OUT_DIR, 'cross_dataset_confusion_matrix.png')}")
+
+        if fine_tuned:
+            # Only write to the DB when this is a genuine held-out check
+            # (reserved test patients) -- the "all external images, not yet
+            # fine-tuned" mode isn't a number that belongs in the app's
+            # permanent record.
+            combined_report_dict = classification_report(
+                combined_labels, combined_preds, labels=present_labels, output_dict=True, zero_division=0
+            )
+            per_class_metrics = {
+                name: {
+                    "precision": combined_report_dict[name]["precision"],
+                    "recall": combined_report_dict[name]["recall"],
+                    "f1_score": combined_report_dict[name]["f1-score"],
+                    "support": int(combined_report_dict[name]["support"]),
+                }
+                for name in present_labels
+            }
+            ok = write_evaluation_metric(
+                checkpoint_path=CHECKPOINT_PATH,
+                val_macro_f1=val_macro_f1,
+                dataset_split=DATASET_SPLIT,
+                accuracy=combined_report_dict["accuracy"],
+                precision_macro=combined_report_dict["macro avg"]["precision"],
+                recall_macro=combined_report_dict["macro avg"]["recall"],
+                f1_macro=combined_report_dict["macro avg"]["f1-score"],
+                per_class_metrics=per_class_metrics,
+                confusion_matrix={"labels": present_labels, "matrix": cm.tolist()},
+            )
+            if ok:
+                print(f"Evaluation metrics written to the database (dataset_split='{DATASET_SPLIT}')")
 
     report_path = os.path.join(OUT_DIR, "cross_dataset_evaluation_report.txt")
     with open(report_path, "w", encoding="utf-8") as f:

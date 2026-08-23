@@ -1,4 +1,5 @@
 import { BrowserRouter, Route, Routes } from "react-router-dom";
+import ModelMetrics from "./components/ModelMetrics";
 import Nav from "./components/Nav";
 import ScanDetail from "./components/ScanDetail";
 import ScanHistory from "./components/ScanHistory";
@@ -15,6 +16,7 @@ export default function App() {
               <Route path="/" element={<UploadPredict />} />
               <Route path="/history" element={<ScanHistory />} />
               <Route path="/scans/:scanId" element={<ScanDetail />} />
+              <Route path="/metrics" element={<ModelMetrics />} />
             </Routes>
           </main>
         </div>

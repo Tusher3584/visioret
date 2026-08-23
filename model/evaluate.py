@@ -27,9 +27,12 @@ from torch.utils.data import DataLoader
 from torchvision import transforms
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from backend.db.write_evaluation import write_evaluation_metric  # noqa: E402
 from model.dataset import OCTDataset, collect_samples, filter_by_patients  # noqa: E402
 from model.inference import IMAGENET_MEAN, IMAGENET_STD, load_model  # noqa: E402
 from model.oct_preprocessing import limit_worker_cv2_threads  # noqa: E402
+
+DATASET_SPLIT = "kermany_test"
 
 DATA_ROOT = r"G:\Download\archive\OCT2017"
 TRAIN_DIR = os.path.join(DATA_ROOT, "train")
@@ -51,7 +54,7 @@ def main():
         return
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    model, checkpoint_loaded, class_names, _val_macro_f1 = load_model(CHECKPOINT_PATH, device)
+    model, checkpoint_loaded, class_names, val_macro_f1 = load_model(CHECKPOINT_PATH, device)
     if not checkpoint_loaded:
         print(f"No checkpoint found at '{CHECKPOINT_PATH}' -- run train_full.py first.")
         return
@@ -109,6 +112,30 @@ def main():
     plt.tight_layout()
     plt.savefig(CONFUSION_MATRIX_PATH, dpi=150)
     print(f"Confusion matrix saved to {CONFUSION_MATRIX_PATH}")
+
+    report_dict = classification_report(all_labels, all_preds, target_names=class_names, output_dict=True, zero_division=0)
+    per_class_metrics = {
+        name: {
+            "precision": report_dict[name]["precision"],
+            "recall": report_dict[name]["recall"],
+            "f1_score": report_dict[name]["f1-score"],
+            "support": int(report_dict[name]["support"]),
+        }
+        for name in class_names
+    }
+    ok = write_evaluation_metric(
+        checkpoint_path=CHECKPOINT_PATH,
+        val_macro_f1=val_macro_f1,
+        dataset_split=DATASET_SPLIT,
+        accuracy=report_dict["accuracy"],
+        precision_macro=report_dict["macro avg"]["precision"],
+        recall_macro=report_dict["macro avg"]["recall"],
+        f1_macro=report_dict["macro avg"]["f1-score"],
+        per_class_metrics=per_class_metrics,
+        confusion_matrix={"labels": class_names, "matrix": cm.tolist()},
+    )
+    if ok:
+        print(f"Evaluation metrics written to the database (dataset_split='{DATASET_SPLIT}')")
 
 
 if __name__ == "__main__":

@@ -27,38 +27,22 @@ from model.inference import (  # noqa: E402
 from model.explanations import build_explanation  # noqa: E402
 from model.ood_detector import check_is_oct, load_ood_stats  # noqa: E402
 
-from backend.db.models import GradcamResult, ModelVersion, Prediction, Scan  # noqa: E402
+from backend.db.model_version import get_or_create_model_version  # noqa: E402
+from backend.db.models import EvaluationMetric, GradcamResult, Prediction, Scan  # noqa: E402
 from backend.db.session import get_db  # noqa: E402
-from backend.schemas import HealthResponse, PredictionResponse, ScanDetail, ScanSummary  # noqa: E402
+from backend.schemas import (  # noqa: E402
+    EvaluationMetricResponse,
+    HealthResponse,
+    PredictionResponse,
+    ScanDetail,
+    ScanSummary,
+)
 from backend.storage import MEDIA_DIR, new_scan_id, save_scan_images  # noqa: E402
 
 ROOT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 CHECKPOINT_PATH = os.path.join(ROOT_DIR, "model", "checkpoints", "resnet50_oct.pth")
 
 model_state = {}
-
-
-def get_or_create_model_version(db: Session, checkpoint_path: str, val_macro_f1) -> ModelVersion:
-    """One ModelVersion row per distinct checkpoint file (keyed by its mtime,
-    so retraining -- which produces a new file mtime -- gets its own row and
-    predictions stay attributable to the exact model that made them)."""
-    if not os.path.isfile(checkpoint_path):
-        version_label = "untrained-imagenet-backbone"
-    else:
-        mtime = int(os.path.getmtime(checkpoint_path))
-        version_label = f"resnet50_oct_{mtime}"
-
-    existing = db.query(ModelVersion).filter_by(version_label=version_label).first()
-    if existing:
-        return existing
-
-    version = ModelVersion(
-        version_label=version_label, checkpoint_path=checkpoint_path, val_macro_f1=val_macro_f1
-    )
-    db.add(version)
-    db.commit()
-    db.refresh(version)
-    return version
 
 
 @asynccontextmanager
@@ -107,6 +91,44 @@ def health():
         classes=model_state["classes"],
         ood_gate_active=model_state["ood_stats"] is not None,
     )
+
+
+DATASET_SPLIT_LABELS = {
+    "kermany_test": "In-distribution (Kermany OCT2017 held-out test)",
+    "external_test": "Cross-dataset generalization (Noor Eye Hospital + OCTDL + Duke, held-out)",
+}
+
+
+@app.get("/api/metrics", response_model=list[EvaluationMetricResponse])
+def get_metrics(db: Session = Depends(get_db)):
+    """Latest evaluation results for the currently deployed model, one row
+    per dataset split that's been evaluated (see model/evaluate.py and
+    model/evaluate_cross_dataset.py -- neither runs automatically, so this
+    reflects whenever those were last run against the current checkpoint)."""
+    version_id = model_state.get("model_version_id")
+    if version_id is None:
+        return []
+    metrics = (
+        db.query(EvaluationMetric)
+        .filter_by(model_version_id=version_id)
+        .order_by(EvaluationMetric.dataset_split)
+        .all()
+    )
+    return [
+        EvaluationMetricResponse(
+            dataset_split=m.dataset_split,
+            dataset_split_label=DATASET_SPLIT_LABELS.get(m.dataset_split, m.dataset_split),
+            accuracy=m.accuracy,
+            precision_macro=m.precision_macro,
+            recall_macro=m.recall_macro,
+            f1_macro=m.f1_macro,
+            per_class_metrics=m.per_class_metrics,
+            confusion_matrix=m.confusion_matrix,
+            evaluated_at=m.evaluated_at,
+            model_version_label=model_state["model_version_label"],
+        )
+        for m in metrics
+    ]
 
 
 @app.post("/api/predict", response_model=PredictionResponse)

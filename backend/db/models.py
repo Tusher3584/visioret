@@ -110,5 +110,11 @@ class EvaluationMetric(Base):
     precision_macro: Mapped[float] = mapped_column(Float)
     recall_macro: Mapped[float] = mapped_column(Float)
     f1_macro: Mapped[float] = mapped_column(Float)
+    # {class_name: {precision, recall, f1_score, support}}
+    per_class_metrics: Mapped[dict] = mapped_column(JSON)
+    # {"labels": [...], "matrix": [[...], ...]} -- matrix[i][j] = count of
+    # true label i predicted as label j
+    confusion_matrix: Mapped[dict] = mapped_column(JSON)
+    evaluated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
 
     model_version: Mapped["ModelVersion"] = relationship(back_populates="evaluation_metrics")

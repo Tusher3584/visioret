@@ -36,6 +36,9 @@ export default function Nav() {
           <NavLink to="/history" className={linkClass}>
             History
           </NavLink>
+          <NavLink to="/metrics" className={linkClass}>
+            Metrics
+          </NavLink>
         </nav>
         <StatusBadge health={health} />
       </div>
