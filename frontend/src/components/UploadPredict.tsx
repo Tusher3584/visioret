@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useRef, useState, type ReactNode } from "react";
 import { ApiError, predict } from "../api/client";
 import type { PredictionResponse } from "../api/types";
 import ScanResult from "./ScanResult";
@@ -42,51 +42,57 @@ export default function UploadPredict() {
 
   return (
     <div className="flex flex-col gap-6">
-      <div>
-        <h2 className="text-lg font-semibold text-slate-900 dark:text-slate-50">1. Provide an image</h2>
-        <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">Upload an OCT scan (JPEG or PNG).</p>
-      </div>
+      <div className="flex flex-col gap-4 rounded-xl border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900">
+        <div className="flex items-center gap-2">
+          <StepBadge>1</StepBadge>
+          <h2 className="text-lg font-semibold text-slate-900 dark:text-slate-50">Provide an image</h2>
+        </div>
+        <p className="-mt-2 text-sm text-slate-500 dark:text-slate-400">Upload an OCT B-scan (JPEG or PNG).</p>
 
-      <div className="flex flex-col items-start gap-4 sm:flex-row sm:items-center">
-        <input
-          ref={fileInputRef}
-          type="file"
-          accept="image/jpeg,image/png"
-          onChange={(e) => handleFileChange(e.target.files?.[0] ?? null)}
-          className="block text-sm text-slate-600 file:mr-4 file:rounded-md file:border-0 file:bg-teal-600 file:px-4 file:py-2 file:text-sm file:font-medium file:text-white hover:file:bg-teal-700 dark:text-slate-300"
-        />
-        <button
-          onClick={handlePredict}
-          disabled={!file || isLoading}
-          className="rounded-md bg-slate-900 px-5 py-2 text-sm font-semibold text-white transition disabled:cursor-not-allowed disabled:opacity-40 dark:bg-slate-100 dark:text-slate-900"
-        >
-          {isLoading ? "Running inference..." : "Predict"}
-        </button>
-      </div>
+        <div className="flex flex-col items-start gap-4 sm:flex-row sm:items-center">
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="image/jpeg,image/png"
+            onChange={(e) => handleFileChange(e.target.files?.[0] ?? null)}
+            className="block text-sm text-slate-600 file:mr-4 file:rounded-lg file:border-0 file:bg-blue-600 file:px-4 file:py-2 file:text-sm file:font-medium file:text-white hover:file:bg-blue-700 dark:text-slate-300"
+          />
+          <button
+            onClick={handlePredict}
+            disabled={!file || isLoading}
+            className="rounded-lg bg-slate-900 px-5 py-2 text-sm font-semibold text-white transition disabled:cursor-not-allowed disabled:opacity-40 dark:bg-slate-100 dark:text-slate-900"
+          >
+            {isLoading ? "Running inference..." : "Predict"}
+          </button>
+        </div>
 
-      {previewUrl && !result && (
-        <img
-          src={previewUrl}
-          alt="Preview of the selected scan"
-          className="max-w-xs rounded-lg border border-slate-200 dark:border-slate-700"
-        />
-      )}
+        {previewUrl && !result && (
+          <img
+            src={previewUrl}
+            alt="Preview of the selected scan"
+            className="max-w-xs rounded-lg border border-slate-200 dark:border-slate-700"
+          />
+        )}
+      </div>
 
       {notOctWarning && (
-        <div className="rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900 dark:border-amber-900 dark:bg-amber-950/50 dark:text-amber-300">
+        <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900 dark:border-amber-900 dark:bg-amber-950/50 dark:text-amber-300">
           {notOctWarning}
         </div>
       )}
 
       {error && (
-        <div className="rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800 dark:border-red-900 dark:bg-red-950/50 dark:text-red-300">
+        <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800 dark:border-red-900 dark:bg-red-950/50 dark:text-red-300">
           {error}
         </div>
       )}
 
       {result && (
-        <div>
-          <h2 className="mb-4 text-lg font-semibold text-slate-900 dark:text-slate-50">2. Results</h2>
+        <div className="flex flex-col gap-4">
+          <div className="flex items-center gap-2">
+            <StepBadge>2</StepBadge>
+            <h2 className="text-lg font-semibold text-slate-900 dark:text-slate-50">Results</h2>
+          </div>
           <ScanResult
             originalImageUrl={result.original_image_url}
             gradcamOverlayUrl={result.gradcam_overlay_url}
@@ -98,5 +104,13 @@ export default function UploadPredict() {
         </div>
       )}
     </div>
+  );
+}
+
+function StepBadge({ children }: { children: ReactNode }) {
+  return (
+    <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-blue-600 font-mono text-xs font-semibold text-white">
+      {children}
+    </span>
   );
 }

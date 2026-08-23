@@ -7,8 +7,8 @@ import UploadPredict from "./components/UploadPredict";
 export default function App() {
   return (
     <BrowserRouter>
-      <div className="min-h-screen bg-white text-slate-900 dark:bg-slate-950 dark:text-slate-50">
-        <div className="mx-auto flex max-w-3xl flex-col gap-6 px-4 py-8">
+      <div className="min-h-screen bg-slate-50 text-slate-900 dark:bg-slate-950 dark:text-slate-50">
+        <div className="mx-auto flex max-w-3xl flex-col gap-6 px-4 py-8 sm:py-10">
           <Nav />
           <main>
             <Routes>

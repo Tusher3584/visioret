@@ -218,15 +218,39 @@ time `preprocess_oct` was in place. Fixed by adding the same
         and fine-tuning measurably improved real generalization to unseen
         institutions/scanners, without costing in-distribution accuracy.
 
-## Checkpoint 6 — UI redesign
+## Checkpoint 6 — UI redesign ✅ DONE
 
 Current frontend is functionally correct but visually generic
 (default-Tailwind look, no real design pass). Needs to look like a
 considered product for a final-year defense, not a scaffold.
 
-- [ ] Real design pass: typography, layout, color system, information
-      hierarchy — not just "it uses Tailwind"
-- [ ] Apply consistently across Predict / History / Detail views
+- [x] Real design pass: Inter (UI text) + IBM Plex Mono (confidence
+      numbers, scan IDs, model version -- reinforces a precision-instrument
+      feel) via Google Fonts; brand color moved from generic teal to a
+      considered blue; a semantic per-class color system (amber=CNV,
+      rose=DME, violet=DRUSEN, emerald=NORMAL) shared via
+      `frontend/src/lib/classColors.ts` and applied consistently to the
+      prediction badge, probability bars, and history-list color dots, so
+      the same class always reads as the same color everywhere. Cards
+      moved from flat borders to subtle elevation (rounded-xl + shadow-sm).
+- [x] Applied consistently across Predict (`UploadPredict.tsx`), History
+      (`ScanHistory.tsx`), and Detail (`ScanDetail.tsx` / `ScanResult.tsx`)
+      views, plus `Nav.tsx` (new logo mark, refined status badge) and
+      `App.tsx` (shell background).
+- [x] Verified against the live Docker stack with real predictions across
+      all 4 classes: computed styles confirmed each class renders its
+      correct distinct color (amber/emerald/violet/rose) in both the badge
+      text and probability bars, dark-mode variants correct, all images
+      (original + Grad-CAM overlay) loading correctly.
+
+**Bug found and fixed along the way:** verifying against live predictions,
+the OOD gate rejected a real CNV sample as "not OCT" (422). Root cause:
+`ood_stats.pth` was still calibrated against the pre-Checkpoint-5
+checkpoint's feature space; fine-tuning shifted the model's embeddings
+enough that the old distance thresholds no longer fit. Recalibrated via
+`model/compute_ood_stats.py` and confirmed fixed. This should be done
+after every retrain going forward -- the OOD detector is tied to the
+specific checkpoint's feature space, not just an independent module.
 
 ## Checkpoint 7 — Evaluation metrics integrated into the app
 

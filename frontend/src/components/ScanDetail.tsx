@@ -18,12 +18,12 @@ export default function ScanDetail() {
 
   return (
     <div className="flex flex-col gap-6">
-      <Link to="/history" className="w-fit text-sm text-teal-700 hover:underline dark:text-teal-400">
+      <Link to="/history" className="w-fit text-sm font-medium text-blue-700 hover:underline dark:text-blue-400">
         &larr; Back to history
       </Link>
 
       {error && (
-        <div className="rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800 dark:border-red-900 dark:bg-red-950/50 dark:text-red-300">
+        <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800 dark:border-red-900 dark:bg-red-950/50 dark:text-red-300">
           {error}
         </div>
       )}
@@ -36,7 +36,7 @@ export default function ScanDetail() {
             <h2 className="text-lg font-semibold text-slate-900 dark:text-slate-50">
               Scan #{scan.scan_id} &middot; {new Date(scan.uploaded_at).toLocaleString()}
             </h2>
-            <span className="text-xs text-slate-400 dark:text-slate-500">Model: {scan.model_version_label}</span>
+            <span className="font-mono text-xs text-slate-400 dark:text-slate-500">Model: {scan.model_version_label}</span>
           </div>
           <ScanResult
             originalImageUrl={scan.original_image_url}
