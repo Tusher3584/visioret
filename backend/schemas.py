@@ -20,6 +20,7 @@ class PredictionResponse(BaseModel):
     probabilities: dict[str, float]
     original_image_url: str
     gradcam_overlay_url: str
+    explanation: str
 
 
 class ScanSummary(BaseModel):
@@ -38,4 +39,5 @@ class ScanDetail(BaseModel):
     probabilities: dict[str, float]
     original_image_url: str
     gradcam_overlay_url: str
+    explanation: str
     model_version_label: str

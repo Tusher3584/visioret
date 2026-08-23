@@ -93,6 +93,7 @@ export default function UploadPredict() {
             predictedClass={result.predicted_class}
             confidence={result.confidence}
             probabilities={result.probabilities}
+            explanation={result.explanation}
           />
         </div>
       )}

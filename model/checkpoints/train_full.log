@@ -195,3 +195,94 @@ Epoch 4/30 (2214s) - train_loss: 0.0887 train_acc: 0.9711 - val_loss: 0.1867 val
 Epoch 5/30 (2673s) - train_loss: 0.0620 train_acc: 0.9799 - val_loss: 0.2176 val_acc: 0.9393 val_macro_f1: 0.9054 - lr: 5.00e-05
 No improvement for 5 epochs, stopping early.
 === Run finished. Best val_macro_f1: 0.9389 ===
+
+=== Run started 2026-08-22 17:41:36 (smoke_test=True) ===
+Using device: cuda
+Smoke test uses an isolated checkpoint path (I:\Coding\visioret\model\checkpoints\_smoke_test_checkpoint.pth) -- never touches the real one.
+Classes detected from folder names: ['CNV', 'DME', 'DRUSEN', 'NORMAL']
+Loaded existing patient split from I:\Coding\visioret\model\checkpoints\patient_split.json
+Kermany patient split -> train: 4002 patients / val: 858 patients / test: 858 patients (test reserved, untouched during training)
+Created new patient-grouped train/val/test split, saved to I:\Coding\visioret\model\checkpoints\external_patient_split.json
+External patient split -> train: 480 patients / val: 104 patients / test: 104 patients (test reserved, untouched during training)
+Train samples: 64 | Val samples: 32
+Train class counts: {'CNV': 16, 'DME': 16, 'DRUSEN': 16, 'NORMAL': 16}
+Trainable params: 22,071,300 / 23,516,228 (unfrozen: ('layer3.', 'layer4.', 'fc.'))
+Epoch 1/1 (23s) - train_loss: 1.3829 train_acc: 0.2969 - val_loss: 1.4117 val_acc: 0.1562 val_macro_f1: 0.1103 - lr: 1.00e-04
+  -> new best val_macro_f1=0.1103, checkpoint saved
+=== Run finished. Best val_macro_f1: 0.1103 ===
+
+=== Run started 2026-08-22 17:42:51 (smoke_test=False) ===
+Using device: cuda
+Classes detected from folder names: ['CNV', 'DME', 'DRUSEN', 'NORMAL']
+Loaded existing patient split from I:\Coding\visioret\model\checkpoints\patient_split.json
+Kermany patient split -> train: 4002 patients / val: 858 patients / test: 858 patients (test reserved, untouched during training)
+Loaded existing patient split from I:\Coding\visioret\model\checkpoints\external_patient_split.json
+External patient split -> train: 480 patients / val: 104 patients / test: 104 patients (test reserved, untouched during training)
+Train samples: 71747 | Val samples: 16669
+Train class counts: {'CNV': 26545, 'DME': 8605, 'DRUSEN': 10156, 'NORMAL': 26441}
+Trainable params: 22,071,300 / 23,516,228 (unfrozen: ('layer3.', 'layer4.', 'fc.'))
+Warm-starting from existing checkpoint I:\Coding\visioret\model\checkpoints\resnet50_oct.pth (prior val_macro_f1=0.9389); optimizer/scheduler start fresh.
+Epoch 1/30 (2339s) - train_loss: 0.1403 train_acc: 0.9516 - val_loss: 0.9196 val_acc: 0.9413 val_macro_f1: 0.9226 - lr: 1.00e-04
+
+=== Run started 2026-08-22 18:32:11 (smoke_test=True) ===
+Using device: cuda
+Smoke test uses an isolated checkpoint path (I:\Coding\visioret\model\checkpoints\_smoke_test_checkpoint.pth) -- never touches the real one.
+Classes detected from folder names: ['CNV', 'DME', 'DRUSEN', 'NORMAL']
+Loaded existing patient split from I:\Coding\visioret\model\checkpoints\patient_split.json
+Kermany patient split -> train: 4002 patients / val: 858 patients / test: 858 patients (test reserved, untouched during training)
+Loaded existing patient split from I:\Coding\visioret\model\checkpoints\external_patient_split.json
+External patient split -> train: 480 patients / val: 104 patients / test: 104 patients (test reserved, untouched during training)
+Train samples: 64 | Val samples: 32
+Train class counts: {'CNV': 16, 'DME': 16, 'DRUSEN': 16, 'NORMAL': 16}
+Trainable params: 22,071,300 / 23,516,228 (unfrozen: ('layer3.', 'layer4.', 'fc.'))
+Epoch 1/1 (34s) - train_loss: 1.3733 train_acc: 0.3125 - val_loss: 1.4000 val_acc: 0.2500 val_macro_f1: 0.1826 - lr: 1.00e-04
+  -> new best val_macro_f1=0.1826, checkpoint saved
+=== Run finished. Best val_macro_f1: 0.1826 ===
+
+=== Run started 2026-08-22 18:33:18 (smoke_test=True) ===
+Using device: cuda
+Smoke test uses an isolated checkpoint path (I:\Coding\visioret\model\checkpoints\_smoke_test_checkpoint.pth) -- never touches the real one.
+Classes detected from folder names: ['CNV', 'DME', 'DRUSEN', 'NORMAL']
+Loaded existing patient split from I:\Coding\visioret\model\checkpoints\patient_split.json
+Kermany patient split -> train: 4002 patients / val: 858 patients / test: 858 patients (test reserved, untouched during training)
+Loaded existing patient split from I:\Coding\visioret\model\checkpoints\external_patient_split.json
+External patient split -> train: 480 patients / val: 104 patients / test: 104 patients (test reserved, untouched during training)
+Train samples: 64 | Val samples: 32
+Train class counts: {'CNV': 16, 'DME': 16, 'DRUSEN': 16, 'NORMAL': 16}
+Trainable params: 22,071,300 / 23,516,228 (unfrozen: ('layer3.', 'layer4.', 'fc.'))
+Warm-starting from existing checkpoint I:\Coding\visioret\model\checkpoints\_smoke_test_checkpoint.pth (checkpoint's stored val_macro_f1=0.9389; measured fresh on this run's val set: 1.0000 -- using the fresh measurement as the baseline to beat); optimizer/scheduler start fresh.
+Epoch 1/1 (14s) - train_loss: 0.1158 train_acc: 0.9688 - val_loss: 0.0200 val_acc: 1.0000 val_macro_f1: 1.0000 - lr: 1.00e-04
+=== Run finished. Best val_macro_f1: 1.0000 ===
+
+=== Run started 2026-08-22 18:34:17 (smoke_test=False) ===
+Using device: cuda
+Classes detected from folder names: ['CNV', 'DME', 'DRUSEN', 'NORMAL']
+Loaded existing patient split from I:\Coding\visioret\model\checkpoints\patient_split.json
+Kermany patient split -> train: 4002 patients / val: 858 patients / test: 858 patients (test reserved, untouched during training)
+Loaded existing patient split from I:\Coding\visioret\model\checkpoints\external_patient_split.json
+External patient split -> train: 480 patients / val: 104 patients / test: 104 patients (test reserved, untouched during training)
+Train samples: 71747 | Val samples: 16669
+Train class counts: {'CNV': 26545, 'DME': 8605, 'DRUSEN': 10156, 'NORMAL': 26441}
+Trainable params: 22,071,300 / 23,516,228 (unfrozen: ('layer3.', 'layer4.', 'fc.'))
+Warm-starting from existing checkpoint I:\Coding\visioret\model\checkpoints\resnet50_oct.pth (checkpoint's stored val_macro_f1=0.9389; measured fresh on this run's val set: 0.8964 -- using the fresh measurement as the baseline to beat); optimizer/scheduler start fresh.
+Epoch 1/30 (2147s) - train_loss: 0.1412 train_acc: 0.9524 - val_loss: 1.0871 val_acc: 0.9416 val_macro_f1: 0.9215 - lr: 1.00e-04
+  -> new best val_macro_f1=0.9215, checkpoint saved
+Epoch 2/30 (2137s) - train_loss: 0.1182 train_acc: 0.9592 - val_loss: 1.5322 val_acc: 0.9313 val_macro_f1: 0.9102 - lr: 1.00e-04
+
+=== Run started 2026-08-22 21:28:38 (smoke_test=False) ===
+Using device: cuda
+Classes detected from folder names: ['CNV', 'DME', 'DRUSEN', 'NORMAL']
+Loaded existing patient split from I:\Coding\visioret\model\checkpoints\patient_split.json
+Kermany patient split -> train: 4002 patients / val: 858 patients / test: 858 patients (test reserved, untouched during training)
+Loaded existing patient split from I:\Coding\visioret\model\checkpoints\external_patient_split.json
+External patient split -> train: 480 patients / val: 104 patients / test: 104 patients (test reserved, untouched during training)
+Train samples: 71747 | Val samples: 16669
+Train class counts: {'CNV': 26545, 'DME': 8605, 'DRUSEN': 10156, 'NORMAL': 26441}
+Trainable params: 22,071,300 / 23,516,228 (unfrozen: ('layer3.', 'layer4.', 'fc.'))
+Resumed from I:\Coding\visioret\model\checkpoints\train_full_resume_state.pth: starting at epoch 3, best_macro_f1=0.9215, epochs_without_improvement=1
+Epoch 3/30 (3254s) - train_loss: 0.1077 train_acc: 0.9627 - val_loss: 1.8937 val_acc: 0.9359 val_macro_f1: 0.9127 - lr: 1.00e-04
+Epoch 4/30 (2118s) - train_loss: 0.1002 train_acc: 0.9652 - val_loss: 1.4453 val_acc: 0.9318 val_macro_f1: 0.9095 - lr: 5.00e-05
+Epoch 5/30 (2295s) - train_loss: 0.0722 train_acc: 0.9750 - val_loss: 1.0476 val_acc: 0.9265 val_macro_f1: 0.9037 - lr: 5.00e-05
+Epoch 6/30 (2147s) - train_loss: 0.0635 train_acc: 0.9772 - val_loss: 1.4860 val_acc: 0.9329 val_macro_f1: 0.9113 - lr: 5.00e-05
+No improvement for 5 epochs, stopping early.
+=== Run finished. Best val_macro_f1: 0.9215 ===

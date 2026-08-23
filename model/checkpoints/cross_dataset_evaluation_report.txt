@@ -1,0 +1,50 @@
+Cross-dataset generalization check -- evaluating against held-out external test split only (fine-tuned checkpoint)
+Checkpoint: I:\Coding\visioret\model\checkpoints\resnet50_oct.pth
+
+=== Noor Eye Hospital (Tehran, Iran) (2472 images) ===
+              precision    recall  f1-score   support
+
+         CNV       0.91      0.92      0.92       547
+         DME       0.00      0.00      0.00         0
+      DRUSEN       0.83      0.79      0.81       779
+      NORMAL       0.89      0.90      0.90      1146
+
+    accuracy                           0.87      2472
+   macro avg       0.66      0.65      0.66      2472
+weighted avg       0.88      0.87      0.87      2472
+
+
+=== OCTDL (NORMAL+DME only) (82 images) ===
+              precision    recall  f1-score   support
+
+         CNV       0.00      0.00      0.00         0
+         DME       0.92      0.92      0.92        24
+      NORMAL       1.00      0.97      0.98        58
+
+    accuracy                           0.95        82
+   macro avg       0.64      0.63      0.63        82
+weighted avg       0.98      0.95      0.96        82
+
+
+=== Duke Srinivasan 2014 (NORMAL+DME only) (158 images) ===
+              precision    recall  f1-score   support
+
+         DME       1.00      0.97      0.99       158
+      NORMAL       0.00      0.00      0.00         0
+
+    accuracy                           0.97       158
+   macro avg       0.50      0.49      0.49       158
+weighted avg       1.00      0.97      0.99       158
+
+
+=== COMBINED (2712 images across all 3 external datasets) ===
+              precision    recall  f1-score   support
+
+         CNV       0.91      0.92      0.92       547
+         DME       0.95      0.97      0.96       182
+      DRUSEN       0.83      0.79      0.81       779
+      NORMAL       0.89      0.91      0.90      1204
+
+    accuracy                           0.88      2712
+   macro avg       0.89      0.90      0.90      2712
+weighted avg       0.88      0.88      0.88      2712

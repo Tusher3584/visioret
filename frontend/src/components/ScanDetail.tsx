@@ -44,6 +44,7 @@ export default function ScanDetail() {
             predictedClass={scan.predicted_class}
             confidence={scan.confidence}
             probabilities={scan.probabilities}
+            explanation={scan.explanation}
           />
         </>
       )}

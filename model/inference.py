@@ -69,8 +69,11 @@ def load_model(checkpoint_path, device):
 
 
 def preprocess_image(image: Image.Image) -> torch.Tensor:
-    """PIL image (any mode) -> normalized (1, 3, 224, 224) tensor."""
-    tensor = _preprocess(image)
+    """PIL image (any mode) -> normalized (1, 3, 224, 224) tensor. Converts
+    to RGB first -- must match model/dataset.py's OCTDataset, which does the
+    same before applying its transform, or grayscale uploads (common for
+    OCT JPEGs) would produce a 1-channel tensor and fail at Normalize."""
+    tensor = _preprocess(image.convert("RGB"))
     return tensor.unsqueeze(0)
 
 

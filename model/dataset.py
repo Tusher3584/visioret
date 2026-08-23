@@ -1,9 +1,16 @@
-"""Patient-grouped OCT2017 dataset loading, shared by train_full.py and evaluate.py.
+"""Patient-grouped OCT dataset loading, shared by train_full.py and evaluate.py.
 
 The Kermany OCT2017 filenames encode a patient id (e.g. CNV-1016042-155.jpeg
 -> patient 1016042). Multiple images per patient are correlated, so a plain
 random image-level split risks leaking a patient's images across train/val.
 This module splits by patient id instead.
+
+Checkpoint 5 (see TODO.md) adds three more public OCT sources, each with its
+own quirky layout -- collect_noor/collect_octdl/collect_duke below normalize
+them into the same (filepath, class_name, patient_id) tuples Kermany uses, so
+they plug into the same patient_grouped_three_way_split / OCTDataset. Patient
+ids are dataset-prefixed (noor-/octdl-/duke-) so they can never collide with
+each other or with Kermany's plain numeric ids.
 """
 
 import os
@@ -14,6 +21,13 @@ from sklearn.model_selection import GroupShuffleSplit
 from torch.utils.data import Dataset
 
 FILENAME_RE = re.compile(r"^([A-Za-z]+)-(\d+)-(\d+)\.(jpeg|jpg|png)$", re.IGNORECASE)
+
+NOOR_ROOT = r"G:\Download\archive\NoorEyeHospital\extracted\NEH_UT_2021RetinalOCTDataset"
+OCTDL_ROOT = r"G:\Download\archive\OCTDL\extracted\OCTDL"
+DUKE_ROOT = r"G:\Download\archive\DukeSrinivasan2014\extracted\Publication_Dataset"
+
+NOOR_LABEL_RE = re.compile(r"_(cnv|drusen|normal)\.(jpg|jpeg|tif|tiff|png)$", re.IGNORECASE)
+OCTDL_PATIENT_RE = re.compile(r"^[a-z]+_(\d+)_\d+\.", re.IGNORECASE)
 
 
 def list_class_dirs(root_dir):
@@ -34,6 +48,83 @@ def collect_samples(*root_dirs):
                 patient_id = f"{class_name}-{match.group(2)}" if match else entry.name
                 samples.append((entry.path, class_name, patient_id))
     return samples
+
+
+def collect_noor(root_dir=NOOR_ROOT):
+    """Noor Eye Hospital: CNV/DRUSEN/NORMAL folders, patient-numbered
+    subfolders. Ground truth is the PER-B-SCAN filename suffix (e.g.
+    "003_Normal.jpg"), not the folder name -- a diagnosed patient's volume
+    can still contain individual B-scans that look normal, so trusting the
+    folder alone would mislabel those. Patient identity is the folder path
+    (class + patient number), independent of each B-scan's own label."""
+    samples = []
+    for class_dir in ("CNV", "DRUSEN", "NORMAL"):
+        root = os.path.join(root_dir, class_dir)
+        if not os.path.isdir(root):
+            continue
+        for dirpath, _dirnames, filenames in os.walk(root):
+            rel = os.path.relpath(dirpath, root)
+            patient_num = rel.split(os.sep)[0] if rel != "." else None
+            if not patient_num:
+                continue
+            for fname in filenames:
+                match = NOOR_LABEL_RE.search(fname)
+                if match:
+                    label = match.group(1).upper()
+                    patient_id = f"noor-{class_dir}-{patient_num}"
+                    samples.append((os.path.join(dirpath, fname), label, patient_id))
+    return samples
+
+
+def collect_octdl(root_dir=OCTDL_ROOT):
+    """OCTDL: folder-level label (no per-image variation). Only NO (->
+    NORMAL) and DME -- its AMD class isn't split into CNV/DRUSEN, so it's
+    excluded rather than guessed at. Patient id is the numeric id embedded
+    in the filename (e.g. dme_1132061_1.jpg -> patient 1132061), shared
+    across that patient's multiple B-scans."""
+    samples = []
+    for class_dir, label in (("NO", "NORMAL"), ("DME", "DME")):
+        root = os.path.join(root_dir, class_dir)
+        if not os.path.isdir(root):
+            continue
+        for fname in os.listdir(root):
+            path = os.path.join(root, fname)
+            if not os.path.isfile(path):
+                continue
+            match = OCTDL_PATIENT_RE.match(fname)
+            patient_num = match.group(1) if match else fname
+            samples.append((path, label, f"octdl-{patient_num}"))
+    return samples
+
+
+def collect_duke(root_dir=DUKE_ROOT):
+    """Duke (Srinivasan et al. 2014): one folder per patient volume
+    (DME<n>/NORMAL<n>/TIFFs/8bitTIFFs/*.tif). AMD<n> excluded, same
+    reasoning as OCTDL's AMD class."""
+    samples = []
+    for entry in os.scandir(root_dir):
+        if not entry.is_dir():
+            continue
+        if entry.name.startswith("DME"):
+            label = "DME"
+        elif entry.name.startswith("NORMAL"):
+            label = "NORMAL"
+        else:
+            continue
+        tiff_dir = os.path.join(entry.path, "TIFFs", "8bitTIFFs")
+        if not os.path.isdir(tiff_dir):
+            continue
+        patient_id = f"duke-{entry.name}"
+        for fname in os.listdir(tiff_dir):
+            path = os.path.join(tiff_dir, fname)
+            if os.path.isfile(path):
+                samples.append((path, label, patient_id))
+    return samples
+
+
+def collect_external_samples():
+    """All three Checkpoint 5 external sources, combined."""
+    return collect_noor() + collect_octdl() + collect_duke()
 
 
 def patient_grouped_split(samples, val_fraction=0.15, random_state=42):

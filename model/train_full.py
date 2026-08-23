@@ -31,6 +31,7 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from model.dataset import (  # noqa: E402
     OCTDataset,
     class_counts,
+    collect_external_samples,
     collect_samples,
     filter_by_patients,
     list_class_dirs,
@@ -60,6 +61,13 @@ CHECKPOINT_PATH = os.path.join(ROOT_DIR, "model", "checkpoints", "resnet50_oct.p
 SMOKE_TEST_CHECKPOINT_PATH = os.path.join(ROOT_DIR, "model", "checkpoints", "_smoke_test_checkpoint.pth")
 RESUME_STATE_PATH = os.path.join(ROOT_DIR, "model", "checkpoints", "train_full_resume_state.pth")
 SPLIT_PATH = os.path.join(ROOT_DIR, "model", "checkpoints", "patient_split.json")
+# Checkpoint 5: a separate, persisted split for the external datasets (Noor
+# Eye Hospital / OCTDL / Duke), kept apart from Kermany's patient_split.json
+# so Kermany's held-out test set is never touched by this. The external
+# test slice is reserved the same way -- excluded from train/val here, used
+# later by evaluate_cross_dataset.py to measure genuine post-finetune
+# generalization rather than memorization of what we trained on.
+EXTERNAL_SPLIT_PATH = os.path.join(ROOT_DIR, "model", "checkpoints", "external_patient_split.json")
 LOG_PATH = os.path.join(ROOT_DIR, "model", "checkpoints", "train_full.log")
 
 MAX_EPOCHS = 30
@@ -90,16 +98,16 @@ def robust_torch_save(obj, path):
     raise last_exc
 
 
-def get_or_create_patient_split(all_samples, log_file):
+def get_or_create_patient_split(all_samples, split_path, log_file):
     """Loads the persisted train/val/test patient-id split if one exists,
     otherwise creates it once and saves it -- so the held-out test set never
     changes across reruns/resumes."""
     import json
 
-    if os.path.isfile(SPLIT_PATH):
-        with open(SPLIT_PATH, "r", encoding="utf-8") as f:
+    if os.path.isfile(split_path):
+        with open(split_path, "r", encoding="utf-8") as f:
             split = json.load(f)
-        log(f"Loaded existing patient split from {SPLIT_PATH}", log_file)
+        log(f"Loaded existing patient split from {split_path}", log_file)
         return set(split["train"]), set(split["val"]), set(split["test"])
 
     train_samples, val_samples, test_samples = patient_grouped_three_way_split(
@@ -109,12 +117,12 @@ def get_or_create_patient_split(all_samples, log_file):
     val_patients = patient_ids_of(val_samples)
     test_patients = patient_ids_of(test_samples)
 
-    os.makedirs(os.path.dirname(SPLIT_PATH), exist_ok=True)
-    with open(SPLIT_PATH, "w", encoding="utf-8") as f:
+    os.makedirs(os.path.dirname(split_path), exist_ok=True)
+    with open(split_path, "w", encoding="utf-8") as f:
         json.dump(
             {"train": sorted(train_patients), "val": sorted(val_patients), "test": sorted(test_patients)}, f
         )
-    log(f"Created new patient-grouped train/val/test split, saved to {SPLIT_PATH}", log_file)
+    log(f"Created new patient-grouped train/val/test split, saved to {split_path}", log_file)
     return train_patients, val_patients, test_patients
 
 
@@ -249,14 +257,36 @@ def main():
         log(f"Classes detected from folder names: {class_names}", log_file)
 
         all_samples = collect_samples(TRAIN_DIR, VAL_DIR, TEST_DIR)
-        train_patients, val_patients, test_patients = get_or_create_patient_split(all_samples, log_file)
+        train_patients, val_patients, test_patients = get_or_create_patient_split(all_samples, SPLIT_PATH, log_file)
         train_samples = filter_by_patients(all_samples, train_patients)
         val_samples = filter_by_patients(all_samples, val_patients)
         log(
-            f"Patient split -> train: {len(train_patients)} patients / val: {len(val_patients)} patients / "
+            f"Kermany patient split -> train: {len(train_patients)} patients / val: {len(val_patients)} patients / "
             f"test: {len(test_patients)} patients (test reserved, untouched during training)",
             log_file,
         )
+
+        # Checkpoint 5: fold in the external datasets' train/val patients too
+        # (their test patients stay reserved, same as Kermany's, for a later
+        # genuine cross-dataset generalization check -- see
+        # model/evaluate_cross_dataset.py).
+        external_samples = collect_external_samples()
+        if external_samples:
+            ext_train_patients, ext_val_patients, ext_test_patients = get_or_create_patient_split(
+                external_samples, EXTERNAL_SPLIT_PATH, log_file
+            )
+            ext_train_samples = filter_by_patients(external_samples, ext_train_patients)
+            ext_val_samples = filter_by_patients(external_samples, ext_val_patients)
+            log(
+                f"External patient split -> train: {len(ext_train_patients)} patients / "
+                f"val: {len(ext_val_patients)} patients / test: {len(ext_test_patients)} patients "
+                "(test reserved, untouched during training)",
+                log_file,
+            )
+            train_samples = train_samples + ext_train_samples
+            val_samples = val_samples + ext_val_samples
+        else:
+            log(f"No external samples found (checked Noor/OCTDL/Duke paths) -- training on Kermany only.", log_file)
 
         train_loader, val_loader, train_counts, n_train, n_val = build_dataloaders(
             train_samples, val_samples, class_names, BATCH_SIZE, args.smoke_test
@@ -303,10 +333,20 @@ def main():
             checkpoint = torch.load(checkpoint_path, map_location=device)
             if isinstance(checkpoint, dict) and "model_state_dict" in checkpoint and checkpoint.get("classes") == class_names:
                 model.load_state_dict(checkpoint["model_state_dict"])
-                best_macro_f1 = checkpoint.get("val_macro_f1", -1.0)
+                stored_val_macro_f1 = checkpoint.get("val_macro_f1", -1.0)
+                # Measure the warm-started weights fresh on THIS run's val
+                # set rather than trusting the checkpoint's stored number --
+                # that number may have been measured on a different val set
+                # composition (e.g. Checkpoint 5 folds external data into
+                # val), making it an apples-to-oranges comparison baseline
+                # that can trigger early stopping / block checkpoint saves
+                # on a false signal, purely because the yardstick changed.
+                _, _, best_macro_f1 = run_validation(model, val_loader, criterion, device)
                 log(
                     f"Warm-starting from existing checkpoint {checkpoint_path} "
-                    f"(prior val_macro_f1={best_macro_f1:.4f}); optimizer/scheduler start fresh.",
+                    f"(checkpoint's stored val_macro_f1={stored_val_macro_f1:.4f}; measured fresh on "
+                    f"this run's val set: {best_macro_f1:.4f} -- using the fresh measurement as the "
+                    "baseline to beat); optimizer/scheduler start fresh.",
                     log_file,
                 )
 

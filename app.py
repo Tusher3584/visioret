@@ -5,6 +5,7 @@ import streamlit as st
 import torch
 from PIL import Image, UnidentifiedImageError
 
+from model.explanations import build_explanation
 from model.inference import (
     generate_gradcam,
     load_model,
@@ -88,6 +89,7 @@ if image is not None:
                 class_index = classes.index(class_name)
                 heatmap = generate_gradcam(model, image_tensor, class_index, device)
                 overlay = overlay_gradcam(image, heatmap)
+                explanation = build_explanation(class_name, heatmap)
             except Exception as exc:
                 st.error(f"Inference failed: {exc}")
                 st.stop()
@@ -102,5 +104,8 @@ if image is not None:
         st.subheader("3. Prediction")
         st.metric("Predicted class", class_name, delta=f"{confidence * 100:.1f}% confidence")
         st.bar_chart(probs_dict)
+
+        st.subheader("4. Why this region?")
+        st.write(explanation)
 else:
     st.info("Upload an OCT image or pick a bundled sample above, then click Predict.")

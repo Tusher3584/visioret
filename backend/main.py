@@ -24,6 +24,7 @@ from model.inference import (  # noqa: E402
     predict,
     preprocess_image,
 )
+from model.explanations import build_explanation  # noqa: E402
 from model.ood_detector import check_is_oct, load_ood_stats  # noqa: E402
 
 from backend.db.models import GradcamResult, ModelVersion, Prediction, Scan  # noqa: E402
@@ -140,6 +141,7 @@ async def predict_endpoint(file: UploadFile = File(...), db: Session = Depends(g
     class_index = classes.index(class_name)
     heatmap = generate_gradcam(model, image_tensor, class_index, device)
     overlay = overlay_gradcam(image, heatmap)
+    explanation = build_explanation(class_name, heatmap)
 
     file_id = new_scan_id()
     original_url, overlay_url = save_scan_images(file_id, image, overlay)
@@ -158,7 +160,7 @@ async def predict_endpoint(file: UploadFile = File(...), db: Session = Depends(g
     db.add(prediction)
     db.flush()
 
-    db.add(GradcamResult(prediction_id=prediction.id, heatmap_path=overlay_url))
+    db.add(GradcamResult(prediction_id=prediction.id, heatmap_path=overlay_url, explanation=explanation))
     db.commit()
 
     return PredictionResponse(
@@ -168,6 +170,7 @@ async def predict_endpoint(file: UploadFile = File(...), db: Session = Depends(g
         probabilities=probabilities,
         original_image_url=original_url,
         gradcam_overlay_url=overlay_url,
+        explanation=explanation,
     )
 
 
@@ -209,5 +212,6 @@ def get_scan(scan_id: int, db: Session = Depends(get_db)):
         probabilities=latest.class_probabilities,
         original_image_url=scan.file_path,
         gradcam_overlay_url=latest.gradcam_result.heatmap_path,
+        explanation=latest.gradcam_result.explanation,
         model_version_label=latest.model_version.version_label,
     )

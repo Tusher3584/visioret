@@ -82,6 +82,7 @@ class GradcamResult(Base):
     prediction_id: Mapped[int] = mapped_column(ForeignKey("predictions.id"), unique=True)
     heatmap_path: Mapped[str] = mapped_column(String(500))
     alpha: Mapped[float] = mapped_column(Float, default=0.45)
+    explanation: Mapped[str] = mapped_column(String(1000))
 
     prediction: Mapped["Prediction"] = relationship(back_populates="gradcam_result")
 

@@ -12,6 +12,7 @@ export interface PredictionResponse {
   probabilities: Record<string, number>;
   original_image_url: string;
   gradcam_overlay_url: string;
+  explanation: string;
 }
 
 export interface ScanSummary {
@@ -30,5 +31,6 @@ export interface ScanDetail {
   probabilities: Record<string, number>;
   original_image_url: string;
   gradcam_overlay_url: string;
+  explanation: string;
   model_version_label: string;
 }
