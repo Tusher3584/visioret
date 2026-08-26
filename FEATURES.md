@@ -138,11 +138,18 @@ Prevents the classifier from confidently labelling a non-OCT image.
 **Two stages, cheapest first:**
 1. **Grayscale heuristic** — real OCT B-scans are near-grayscale; a colour
    photo is rejected before any model runs.
-2. **CLIP zero-shot semantic check** — the image is scored against 8 text
-   prompts (one OCT prompt, seven negatives covering people, objects,
-   animals, natural photographs, X-ray/CT, abstract art, and gradients). The
-   OCT prompt must win the argmax. **No probability threshold is tuned**,
-   deliberately.
+2. **CLIP zero-shot semantic check** — the image is scored against 10 text
+   prompts (one OCT prompt, nine negatives covering people, objects, animals,
+   natural photographs, X-ray/CT, abstract art, gradients, charts/plots, and
+   screenshots/documents). The OCT prompt must win the argmax. **No
+   probability threshold is tuned**, deliberately.
+
+   The negative set is the gate's real design surface: because the decision
+   is an argmax, the gate can only reject what some prompt describes. Two
+   prompts were added during the pre-defense review after a grayscale
+   confusion-matrix plot was accepted at `p=0.848` and classified DME at 77%
+   confidence — no prompt described a chart, so the OCT prompt won by
+   default.
 
 **Rejected uploads return HTTP 422** with an explanatory message and **no
 diagnosis** — the UI presents this as an amber notice, not a red error,
@@ -156,6 +163,12 @@ single-dataset centroid. CLIP needs no per-dataset calibration and
 generalizes to sources it has never seen. **Validated 45/45 correct** across
 30 real OCT images spanning all 4 sources and 15 real non-OCT photographs,
 including the exact images that previously failed.
+
+**Re-validated after the prompt-set fix**, on a larger multi-source set:
+**171/171 real OCT images accepted** (Kermany 100, Noor 41, OCTDL 30) with
+charts, documents and screenshots all rejected. The regression direction
+matters more than the rejection direction here — a gate that turns away real
+patient scans is the failure this design was adopted to prevent.
 
 ### 3.5 Explainability
 

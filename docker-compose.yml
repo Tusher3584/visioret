@@ -21,11 +21,16 @@ services:
       dockerfile: backend/Dockerfile
     environment:
       DATABASE_URL: postgresql+psycopg2://visioret:visioret@db:5432/visioret
-      # Dev-only secret, fine to commit here (mirrors DATABASE_URL's own
-      # hardcoded dev credentials above) -- a real deployment must override
-      # this via a real secret store, never a committed value. See
-      # backend/auth.py.
-      JWT_SECRET_KEY: af84dfee2ddbd9c73b283ab7abe5de725b990abbf5169c0a25c2543261b67299
+      # Read from the project-root .env (gitignored), never committed. The
+      # `:?` form makes compose ABORT with this message if it is unset, rather
+      # than starting with an empty or default key -- a committed or defaulted
+      # signing key lets anyone who has read the repo forge a token for any
+      # account, including an admin. See backend/auth.py, which refuses to
+      # import without it for the same reason.
+      #
+      # The value is quoted because a bare YAML scalar cannot contain ": " --
+      # that sequence makes the parser read it as a nested mapping key.
+      JWT_SECRET_KEY: "${JWT_SECRET_KEY:?not set - copy .env.example to .env and put a generated key in it, see README}"
     ports:
       - "8000:8000"
     volumes:

@@ -16,6 +16,12 @@ NORMAL. Two stages, cheapest first:
    kept for reference since it's a legitimate technique in general, just
    not one that held up against multi-source data in practice -- see
    TODO.md and model/clip_ood.py's docstring for what went wrong and why).
+
+Note on the retired code below: checkpoints/ood_stats.pth was deleted as a
+stale artifact, so load_ood_stats() now returns None (it handles a missing
+file by design). Nothing in the running system calls it. Regenerate it with
+model/compute_ood_stats.py only if you are deliberately reproducing the
+retired experiment.
 """
 
 import os

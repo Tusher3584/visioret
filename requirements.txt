@@ -1,19 +1,57 @@
-torch>=2.5.0
-torchvision>=0.20.0
-streamlit>=1.38.0
-pillow>=10.4.0
-numpy>=1.26.0,<3.0.0
-opencv-python-headless>=4.10.0.84
-matplotlib>=3.9.0
-kagglehub>=1.0.0
-scikit-learn>=1.4.0
-fastapi>=0.115.0
-uvicorn[standard]>=0.30.0
-python-multipart>=0.0.9
-sqlalchemy>=2.0.0
-alembic>=1.13.0
-psycopg2-binary>=2.9.0
-python-dotenv>=1.0.0
-bcrypt>=4.0.0
-pyjwt>=2.9.0
-transformers>=4.45.0
+# Python dependencies for Visioret.
+#
+# Pinning policy
+# --------------
+# The four packages that decide MODEL BEHAVIOUR are pinned exactly. The
+# reported accuracy figures are the deliverable of this project, so the
+# environment that produces them has to be reconstructible: a floating
+# `>=` on torch or transformers means a rebuild months from now silently
+# resolves different versions, and "reproducible" stops being true.
+#
+# Everything else is pinned to a compatible range (>= tested version,
+# < next major) -- it affects plumbing, not numbers, so patch and minor
+# updates are welcome but a breaking major release is not.
+#
+# Versions below are the ones the committed checkpoint and the published
+# evaluation reports were actually produced and served with.
+#
+# Note on torch: PyPI's `torch` wheel for Linux x86-64 is the CUDA build and
+# pulls in ~2.5 GB of nvidia-cu12-* libraries. backend/Dockerfile therefore
+# installs torch/torchvision from PyTorch's CPU index BEFORE running this
+# file, so the container gets the CPU build. If you change the torch or
+# torchvision pins here, change them in backend/Dockerfile too -- they must
+# match, or the CUDA wheel comes back.
+#
+# For GPU training on the host, install the CUDA builds of these exact
+# versions instead -- see README.md.
+
+# --- pinned exactly: determine model behaviour ---
+torch==2.6.0
+torchvision==0.21.0
+transformers==5.15.1
+numpy==2.5.1
+
+# --- image handling ---
+pillow>=12.3.0,<13.0.0
+opencv-python-headless>=5.0.0.93,<6.0.0
+
+# --- training / evaluation ---
+scikit-learn>=1.9.0,<2.0.0
+matplotlib>=3.11.1,<4.0.0
+kagglehub>=1.0.2,<2.0.0
+
+# --- backend ---
+fastapi>=0.141.1,<1.0.0
+uvicorn[standard]>=0.52.0,<1.0.0
+python-multipart>=0.0.32,<0.1.0
+sqlalchemy>=2.0.51,<3.0.0
+alembic>=1.19.0,<2.0.0
+psycopg2-binary>=2.9.12,<3.0.0
+python-dotenv>=1.2.2,<2.0.0
+
+# --- auth ---
+bcrypt>=5.0.0,<6.0.0
+pyjwt>=2.13.0,<3.0.0
+
+# --- streamlit demo (app.py) ---
+streamlit>=1.60.0,<2.0.0

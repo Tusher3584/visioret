@@ -1,10 +1,31 @@
-"""One-off script: computes the OCT-training-set feature centroid/std used
-by model/ood_detector.py, from the already-trained disease classifier.
+"""RETIRED -- calibration script for an OOD stage that is no longer used.
 
-No training happens here -- just forward passes over a sample of real OCT
-images to characterize "what OCT images look like" in feature space.
+    +---------------------------------------------------------------+
+    | Nothing in the running system calls this, and running it        |
+    | changes nothing. check_is_oct() uses the grayscale heuristic    |
+    | plus CLIP (model/clip_ood.py) and never touches the stats this  |
+    | script produces. Kept as a record of the experiment.            |
+    +---------------------------------------------------------------+
 
-Usage:
+What it did: computed the OCT-training-set feature centroid/std used by the
+old feature-distance stage in model/ood_detector.py, from the already-trained
+disease classifier. No training happened here -- just forward passes over a
+sample of real OCT images to characterize "what OCT images look like" in
+feature space, saved to model/checkpoints/ood_stats.pth.
+
+Why it was retired: the calibration only ever saw Kermany images, so
+"is this an OCT scan?" quietly became "does this look like a *Kermany* OCT
+scan?". Real Noor Eye Hospital scans were rejected 3 times out of 5 -- a
+different scanner produces legitimately different feature statistics, and a
+single-dataset centroid has no way to know that. A gate that refuses real
+patient data is worse than no gate. Replaced by a CLIP zero-shot check, which
+needs no per-dataset calibration; see model/clip_ood.py and TODO.md.
+
+A second, subtler problem it had: because the stats characterized the disease
+model's own feature space, they went stale on every retrain, so forgetting to
+re-run this after training was a live bug. The CLIP gate has no such coupling.
+
+Usage (only if you are deliberately reproducing the retired experiment):
     python model/compute_ood_stats.py
 """
 

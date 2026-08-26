@@ -1,6 +1,29 @@
-# Visioret — UI Redesign Brief
+# Visioret — UI Redesign Brief (HISTORICAL)
 
-> **Purpose of this document.** It describes an existing, fully-working web
+> # ⚠️ THIS DOCUMENT IS HISTORICAL — DO NOT READ IT AS THE CURRENT UI
+>
+> **The redesign this brief asked for has been implemented.** Everything
+> below describes the UI as it was *before* that work, written to be handed
+> to a design AI as input. It is kept only as a record of what the redesign
+> was asked to fix.
+>
+> Anyone — human or AI — trying to understand what Visioret's interface
+> looks like **today** should read `FEATURES.md` §6 (design system, routes,
+> components, accessibility) and the actual components under
+> `frontend/src/components/`, not this file.
+>
+> What actually shipped, in summary: semantic design tokens via Tailwind v4
+> `@theme` with a real light/dark system (the imaging surface stays dark in
+> both, per radiology convention), a two-column analysis workspace with a
+> sticky 380px analysis rail, a comparison viewer with a keyboard-navigable
+> lightbox, a dense filterable scan archive, and a metrics page with a
+> row-normalised confusion matrix. Contrast was verified by computation
+> (tightest 4.72:1) and every route was checked for zero horizontal overflow
+> at 320px.
+
+---
+
+> **Original purpose of this document.** It describes an existing, fully-working web
 > application whose UI needs a *structural* redesign (not a re-skin). Hand
 > this to a design AI to get back a concrete design specification, which
 > will then be implemented in the existing React codebase.

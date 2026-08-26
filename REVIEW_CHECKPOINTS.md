@@ -194,3 +194,94 @@ is finished. Safe to delete; it dwarfs the 94 MB checkpoint.
 
 No blocker for the *software*. One blocker for the *defense*: the README.
 Nothing found that exposes a real secret or breaks the running system.
+
+### R1 remediation — all findings resolved
+
+| # | Finding | Resolution |
+|---|---|---|
+| 🔴 R1-1 | README described a Streamlit demo | **`README.md` rewritten from scratch** — Docker quick start, results with the leakage explanation, config table, role matrix, architecture diagram, full API table, non-Docker instructions, training/evaluation, dataset attribution, current file tree, and an explicit Limitations section |
+| 🟠 R1-2 | 25 files uncommitted | **Committed by the user** (`6eff73e`). Working tree was clean before remediation began |
+| 🟠 R1-3 | `JWT_SECRET_KEY` literal in compose | Now `"${JWT_SECRET_KEY:?...}"` — compose **aborts** if unset. Verified both paths (resolves with `.env`; refuses without). The previously-committed value was also **rotated**, since it is permanently in git history |
+| 🟠 R1-4 | `.env.example` missing the key | Rewritten with `JWT_SECRET_KEY`, the generator one-liner, and *why* there is no default |
+| 🟠 R1-5 | Floor-pinned dependencies | `torch`, `torchvision`, `transformers`, `numpy` pinned **exactly** (they decide model behaviour); everything else given `>=tested,<next-major`. Pinning policy documented in the file header |
+| 🟡 R1-6 | Stale OOD section in `PROJECT_CONTEXT.md` | Old design marked **SUPERSEDED** and kept (the retirement reasoning is defensible material), followed by a "Current design (this is what runs)" section. Also fixed: the checkpoint status table (7 checkpoints wrongly marked "Not started"), the architecture tree, and the dataset-paths note |
+| 🟡 R1-7 | `UI_REDESIGN_BRIEF.md` stale | Retitled **(HISTORICAL)** with a prominent banner pointing readers to `FEATURES.md` §6 and the actual components |
+| 🟡 R1-8 | Retired OOD code path | `compute_ood_stats.py` and `train_quick.py` given loud **RETIRED** / **LEGACY** docstring banners explaining what they were, why they were dropped, and what to use instead. `ood_stats.pth` and `_deadline_watch.sh` deleted |
+| 🟡 R1-9 | 271 MB resume state | Deleted |
+
+### 🟠 R1-10 — Backend image was 10.7 GB (found *by* the remediation rebuild)
+
+Not in the original R1 list — the verification rebuild exposed it, which is
+the argument for actually running the build rather than reasoning about it.
+
+`backend/Dockerfile` claimed *"CPU-only by default (matches requirements.txt's
+plain torch install)"*. That comment is **false on Linux**: PyPI's `torch`
+wheel for x86-64 *is* the CUDA build, so `pip install -r requirements.txt`
+pulled `nvidia-cublas-cu12`, `nvidia-cudnn-cu12`, `nvidia-cusparse-cu12`,
+`triton` and a dozen more — roughly 2.5 GB of GPU libraries into a container
+that has no GPU access and never will. Measured image: **10.7 GB**.
+
+Fixed by installing `torch==2.6.0 torchvision==0.21.0` from
+`https://download.pytorch.org/whl/cpu` *before* `requirements.txt`; the second
+pip run finds them already satisfied at the pinned versions and leaves them
+alone. The version-coupling between the two files is called out in a comment
+in both.
+
+### 🔴 R1-11 — OOD gate accepted a chart as an OCT scan (found by end-to-end verification)
+
+Belongs to R2/R5 by topic, but it was found here, while confirming the
+rebuilt image still worked, so it is recorded here. **Fixed and validated.**
+
+A grayscale confusion-matrix plot was pushed through `/api/predict` and came
+back **HTTP 200, DRUSEN→DME at 77% confidence**, with a Grad-CAM overlay and
+a clinical explanation. The gate accepted it at `p(OCT) = 0.848`.
+
+**Root cause — structural, not a bad threshold.** `clip_is_oct` is an argmax
+over a fixed prompt set, so the gate can only reject what some prompt
+actually *describes*. The set covered people, objects, animals, natural
+photographs, X-ray/CT, abstract art and gradients — **nothing described a
+chart, plot or screenshot**, so the OCT prompt won by default. This is the
+same failure mode the "abstract art or wallpaper" prompt had already been
+added for; the lesson is that the negative set needs to span realistic
+mis-uploads, and a figure pasted from a paper is a very realistic mis-upload.
+
+Probing narrowed it precisely — a rendered text document (`p=0.013`) and a UI
+screenshot (`p=0.035`) were **already** rejected. Only chart/plot imagery got
+through.
+
+**Fix:** two negative prompts added to `model/clip_ood.py` —
+`"a chart, graph, plot, heatmap, or data visualization figure"` and
+`"a screenshot of a computer screen, a document, or printed text"`.
+
+**Validation (the important half — a stricter gate that rejects real scans is
+the exact bug this gate already had once):**
+
+| Probe | Before | After |
+|---|---|---|
+| grayscale chart | ACCEPT `p=0.848` | **reject** `p=0.016` |
+| text document | reject `p=0.013` | reject `p=0.003` |
+| UI screenshot | reject `p=0.035` | reject `p=0.014` |
+
+| Real OCT, held against regression | Accepted |
+|---|---|
+| Kermany | 100 / 100 |
+| Noor Eye Hospital | 41 / 41 |
+| OCTDL | 30 / 30 |
+| **Total** | **171 / 171** |
+
+Confirmed through the live API after restart: the chart now returns **422**
+with no diagnosis, and all four bundled OCT samples still classify correctly
+(CNV 1.000, DME 0.987, DRUSEN 0.995, NORMAL 0.999).
+
+**Verification performed:** all model modules still import and
+`load_ood_stats()` degrades to `None` as designed; `docker compose config`
+resolves with `.env` and aborts with a clear message without it; the backend
+image rebuilds cleanly against the newly pinned `requirements.txt`.
+
+**Bug found and fixed during remediation:** the first version of the compose
+change put the `:?` error message inline unquoted, and the message contained
+`run: `. YAML reads `": "` inside a bare scalar as a nested mapping key, so
+`docker compose config` failed with *"mapping values are not allowed in this
+context"* at L30.C96 — before any container started. Fixed by quoting the
+scalar; the reason is now a comment in `docker-compose.yml` so it does not
+recur.

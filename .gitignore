@@ -14,6 +14,12 @@ model/checkpoints/*backup*.pth
 model/checkpoints/*resume_state*.pth
 model/checkpoints/_smoke_test_checkpoint.pth
 
+# Output of model/compute_ood_stats.py, which calibrates an OOD stage that
+# was RETIRED (see that script's docstring). Nothing reads this file. Ignored
+# so that re-running the script to reproduce the retired experiment doesn't
+# put a stale binary back into the repo.
+model/checkpoints/ood_stats.pth
+
 # Frontend
 frontend/node_modules/
 frontend/dist/

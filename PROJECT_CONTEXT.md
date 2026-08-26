@@ -2,8 +2,17 @@
 
 Read this entire file before doing anything else. It exists so a fresh
 session with zero memory of prior conversations can pick up exactly where
-things left off, as if it had the full chat history. Written 2026-08-20,
-right after Checkpoint 1 (OOD detection) shipped and was verified.
+things left off, as if it had the full chat history. Originally written
+2026-08-20, right after Checkpoint 1 (OOD detection) shipped and was
+verified; revised 2026-08-26 during the pre-defense review.
+
+> **How to read this file.** It is a *decision log*, not a specification —
+> it deliberately records dead ends and superseded designs alongside the
+> current one, because the reasoning behind an abandoned approach is the
+> part that gets asked about in a defense. Sections that no longer describe
+> the running system are marked **SUPERSEDED** and are followed by what
+> replaced them. For a straight statement of what the system does today,
+> read `README.md` (setup and usage) or `FEATURES.md` (complete inventory).
 
 ---
 
@@ -165,7 +174,15 @@ test, so it was mirror-specific, not a connectivity problem). Abandoned that
 and pivoted to something better-suited anyway: **feature-space anomaly
 detection**, which needs zero negative training images.
 
-Three stages, cheapest first, all in `model/ood_detector.py`:
+> ⚠️ **SUPERSEDED — read the "current design" box below before acting on
+> anything in this subsection.** The three-stage design described next was
+> the *original* Checkpoint 1 implementation. Stages 2 and 3 were retired
+> in commit `16a728b` ("fixed the ood gate"). The paragraphs are kept
+> because the reasoning behind the retirement is a defensible experimental
+> result and is likely to be asked about — not because they describe the
+> running system.
+
+Originally, three stages, cheapest first, all in `model/ood_detector.py`:
 1. **Color heuristic** — real OCT B-scans are near-grayscale (R≈G≈B per
    pixel); an actual color photo fails this instantly, before any model
    runs.
@@ -180,11 +197,46 @@ Three stages, cheapest first, all in `model/ood_detector.py`:
    OCT training images in that space. Threshold calibrated as the 99th
    percentile of intra-OCT distances (~1.45) from 1,600 real training images.
 
-Calibration script: `model/compute_ood_stats.py` (already run; output saved
-to `model/checkpoints/ood_stats.pth` — centroid, per-dimension std,
-distance threshold, brightness threshold). Re-run this only if the disease
-model itself gets retrained (new `resnet50_oct.pth`), since the feature
-space it characterizes would then be stale.
+Calibration for stages 2–3 came from `model/compute_ood_stats.py`, saved to
+`model/checkpoints/ood_stats.pth`.
+
+**Why stages 2 and 3 were retired.** Both were calibrated against 1,600
+**Kermany-only** images, which made "is this an OCT scan?" quietly collapse
+into "does this look like a *Kermany* OCT scan?". Once real Noor Eye
+Hospital scans were tested, the gate rejected **3 of 5** genuine CNV
+images — a different scanner produces legitimately different brightness and
+feature statistics, and the calibration had no way to know that. A gate that
+refuses real patient data is worse than no gate.
+
+### Current design (this is what runs)
+
+Two stages, cheapest first, entry point still `model/ood_detector.py`'s
+`check_is_oct()`:
+1. **Grayscale heuristic** — unchanged from stage 1 above
+   (`is_grayscale_heuristic`, threshold 12.0 mean channel difference).
+2. **CLIP zero-shot semantic check** — `model/clip_ood.py`, using
+   `openai/clip-vit-base-patch32`. The image is scored against 8 text
+   prompts; index 0 is the only accepting prompt ("an OCT scan"), the other
+   seven cover people, objects, animals, natural photographs, X-ray/CT,
+   abstract art and gradients. The OCT prompt must win the **argmax** —
+   there is deliberately **no tuned probability threshold**, because a tuned
+   threshold is exactly what failed before.
+
+CLIP needs no per-dataset calibration, so it generalizes to scanners it has
+never seen. **Validated 45/45 correct**: 30 real OCT images spanning all four
+datasets (including the exact Noor images the old gate rejected) plus 15 real
+non-OCT photographs.
+
+Consequences for anyone working on this:
+- `model/compute_ood_stats.py`, `ood_stats.pth`, and
+  `compute_ood_stats`/`ood_distance`/`load_ood_stats` inside
+  `ood_detector.py` are **inert**. `check_is_oct` does not call them.
+- Retraining the disease model **no longer requires recalibrating the OOD
+  gate**, because the gate no longer depends on the disease model's feature
+  space at all. (Under the old design it did, and forgetting to recalibrate
+  after a retrain was a real bug — see TODO.md.)
+- CLIP weights are downloaded from HuggingFace on first use and cached in
+  the `visioret_hf_cache` Docker volume.
 
 Integrated into `backend/main.py` (`/api/predict` returns **HTTP 422** with
 a clear message on rejection, checked via `check_is_oct()` before running
@@ -207,17 +259,20 @@ See `TODO.md` for the authoritative, checkbox-tracked version. Summary:
 
 | # | Checkpoint | Status |
 |---|---|---|
-| 1 | Input validation / OOD detection | ✅ Done, verified |
-| 2 | OCT-specific preprocessing pipeline | Not started — next up |
-| 3 | Grad-CAM accuracy | Not started (likely benefits from #2) |
-| 4 | Grad-CAM "why" explanation section | Not started |
-| 5 | Additional data sources / generalization | Not started |
-| 6 | UI redesign | Not started |
-| 7 | Evaluation metrics integrated into the app | Not started |
-| 8 | Feedback/correction workflow | Not started |
-| 9 | User accounts | Not started |
-| 10 | Accessibility pass | Not started |
-| 11 | Deployment | Not started (stretch, do last) |
+| 1 | Input validation / OOD detection | ✅ Done — later **redesigned** (feature-distance → CLIP), see §3 |
+| 2 | OCT-specific preprocessing pipeline | ✅ Done — **negative result, reverted**; code kept as evidence |
+| 3 | Grad-CAM accuracy | ✅ Assessed — 10 overlays reviewed, no change needed |
+| 4 | Grad-CAM "why" explanation section | ✅ Done (`model/explanations.py`) |
+| 5 | Additional data sources / generalization | ✅ Done — Noor + OCTDL + Duke, 82.0% → 88.1% external |
+| 6 | UI redesign | ✅ Done — full structural redesign (took three attempts) |
+| 7 | Evaluation metrics integrated into the app | ✅ Done (`/api/metrics`, metrics page) |
+| 8 | Feedback/correction workflow | ✅ Done (reviewer-gated) |
+| 9 | User accounts | ✅ Done — bcrypt + JWT, viewer/reviewer/admin RBAC |
+| 10 | Accessibility pass | ✅ Done — contrast computed, 320px verified |
+| 11 | Deployment | ⬜ Not started (stretch, do last) |
+
+Pre-defense review of the whole project is tracked separately in
+`REVIEW_CHECKPOINTS.md` (R1–R9).
 
 Recommended order is safety → scientific rigor → explainability → product
 polish → completeness → stretch, but this was explicitly left open to
@@ -232,38 +287,64 @@ visioret/
   app.py                        # Streamlit demo (still maintained, has OOD gate too)
   model/
     inference.py                 # preprocessing, predict(), manual Grad-CAM, load_model()
-    dataset.py                    # patient-grouped dataset/split helpers
-    train_quick.py                 # original 400-image demo fine-tune (legacy, kept for reference)
+    dataset.py                    # patient-grouped dataset/split helpers + 4 dataset collectors
     train_full.py                  # real training script: full dataset, resume/warm-start, patient split
     evaluate.py                    # precision/recall/F1/confusion matrix on held-out test set
-    ood_detector.py                 # Checkpoint 1: 3-stage OOD gate
-    compute_ood_stats.py             # one-off calibration script for ood_detector.py
+    evaluate_cross_dataset.py       # external-generalization eval (Noor + OCTDL + Duke)
+    explanations.py                  # Checkpoint 4: clinical text + heatmap-geometry description
+    ood_detector.py                   # OOD gate entry point: grayscale -> CLIP (see §3)
+    clip_ood.py                        # Checkpoint 1 (redesigned): CLIP zero-shot OCT check
+    oct_preprocessing.py                # RETIRED experiment (Checkpoint 2), kept as evidence
+    compute_ood_stats.py                 # RETIRED: calibration for the old feature-distance stage
+    train_quick.py                        # LEGACY: original 400-image demo fine-tune
     checkpoints/
-      resnet50_oct.pth               # THE trained model (91MB) -- committed to git
+      resnet50_oct.pth               # THE trained model (94MB) -- committed to git
       patient_split.json              # persisted train/val/test patient-id split
-      ood_stats.pth                   # OOD calibration stats
-      evaluation_report.txt            # offline eval output (not yet shown in the app -- Checkpoint 7)
-      confusion_matrix.png             # ditto
+      external_patient_split.json      # same, for the three external datasets
+      evaluation_report.txt             # in-distribution eval (shown in-app via /api/metrics)
+      cross_dataset_evaluation_report.txt
+      confusion_matrix.png / cross_dataset_confusion_matrix.png
       train_full.log                   # training log
   backend/
-    main.py                        # FastAPI app, all endpoints, OOD gate wired in
-    schemas.py                      # Pydantic request/response models
-    storage.py                       # saves scan images to backend/media/
+    main.py                        # FastAPI app, all 12 endpoints, OOD gate wired in
+    auth.py                         # bcrypt hashing, JWT, role dependencies (viewer/reviewer/admin)
+    schemas.py                       # Pydantic request/response models
+    storage.py                        # saves scan images to backend/media/
+    grant_role.py                      # role CLI -- the ONLY way to create an admin
+    purge_anonymous.py                  # deletes anonymous scans + their image files
     db/
       models.py                      # SQLAlchemy models, all 7 entities
       session.py                      # DB engine/session, reads DATABASE_URL
-    alembic/                        # migrations (already applied)
+      model_version.py                 # shared get_or_create_model_version
+      write_evaluation.py               # best-effort metric write from eval scripts
+    alembic/versions/               # 7 migrations, chain intact
     Dockerfile                      # CPU-only, model/ volume-mounted not baked in
   frontend/
     src/
       api/client.ts                  # typed fetch wrapper, ApiError carries HTTP status
       api/types.ts                    # types matching backend Pydantic schemas
+      context/                         # AuthContext, ThemeContext
+      lib/                              # identicon, anonSession, motion, classColors, format
       components/
-        UploadPredict.tsx              # main predict flow, amber OOD-rejection notice
-        ScanHistory.tsx, ScanDetail.tsx, ScanResult.tsx, ProbabilityBars.tsx, Nav.tsx
+        layout/                        # Header, UserMenu, Avatar, ThemeToggle, SystemStatus,
+                                       #   PageHeader, LogoMark
+        analysis/                       # ScanAnalysis (the workspace), ImagePane,
+                                        #   ScanComparison, ImageLightbox, PredictionSummary,
+                                        #   ProbabilityDistribution, ExplanationPanel, ReviewPanel
+        archive/                         # ScanArchive, ArchiveToolbar
+        metrics/                          # MetricsSection, PerClassTable, ConfusionMatrix
+        upload/                            # UploadWorkspace
+        ui/ states/                         # Button, AnimatedNumber, loading/error/empty states
+      pages/                          # Predict, History, ScanDetail, Metrics, Login,
+                                      #   Profile, Admin  (7 routes)
+      index.css                        # Tailwind v4 @theme semantic design tokens
     Dockerfile                      # multi-stage: node build -> nginx serve
     nginx.conf                      # SPA fallback routing fix
   docker-compose.yml               # db (port 5433) + backend (8000) + frontend (5173)
+  .env.example                     # copy to .env; JWT_SECRET_KEY is REQUIRED
+  README.md                        # setup, usage, results, limitations
+  FEATURES.md                      # complete feature inventory + all known gaps
+  REVIEW_CHECKPOINTS.md            # pre-defense review plan R1-R9 and findings
   TODO.md                          # the living checkpoint list -- READ THIS TOO
   PROJECT_CONTEXT.md               # this file
 ```
@@ -278,9 +359,20 @@ either ask the user to start it or launch
 `"/c/Program Files/Docker/Docker/Docker Desktop.exe"` and wait via
 `until docker info >/dev/null 2>&1; do sleep 3; done`.
 
-**Dataset location:** the full Kermany OCT2017 dataset lives outside the
-repo at `G:\Download\archive\OCT2017\{train,test,val}` — needed by
-`train_full.py`, `evaluate.py`, and `compute_ood_stats.py`. Not part of git.
+**Dataset locations:** all four datasets live outside the repo on this
+machine (none are part of git), and their paths are constants at the top of
+`model/dataset.py`:
+
+| Dataset | Path |
+|---|---|
+| Kermany OCT2017 | `G:\Download\archive\OCT2017\{train,test,val}` |
+| Noor Eye Hospital | `G:\Download\archive\NoorEyeHospital\extracted\NEH_UT_2021RetinalOCTDataset` |
+| OCTDL | `G:\Download\archive\OCTDL\extracted\OCTDL` |
+| Duke (Srinivasan 2014) | `G:\Download\archive\DukeSrinivasan2014\extracted\Publication_Dataset` |
+
+Needed by `train_full.py`, `evaluate.py` and `evaluate_cross_dataset.py`.
+The OOD gate no longer needs them at all — CLIP requires no calibration
+against project data.
 
 **Local (non-Docker) dev/testing:** the Python venv at `venv/` has
 everything installed (CUDA-enabled torch on this machine). Useful for fast

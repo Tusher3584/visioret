@@ -1,8 +1,21 @@
-"""Optional quick fine-tune on a local data/ subset. Not required for the demo
-to run -- app.py works with the ImageNet backbone + random head if this was
-never run or if data/ is empty.
+"""LEGACY -- the original 400-image demo trainer. NOT how the shipped model
+was produced.
 
-Usage:
+    +---------------------------------------------------------------+
+    | Use model/train_full.py instead. This script freezes the whole  |
+    | backbone, trains only the final linear layer on the 400-image   |
+    | data/ subset, and does NOT split by patient -- so any accuracy   |
+    | it reports is inflated by leakage. Running it OVERWRITES        |
+    | model/checkpoints/resnet50_oct.pth with a far weaker model.     |
+    +---------------------------------------------------------------+
+
+Kept because it is the honest starting point of the project and shows what
+changed: train_full.py unfreezes layer3/layer4/fc, trains on four pooled
+datasets, splits by patient ID so no patient appears in two splits, uses
+class-weighted loss, early stopping and mixed precision, and persists its
+split so the held-out test set never moves.
+
+Usage (not recommended -- back up the checkpoint first):
     python model/train_quick.py
 """
 

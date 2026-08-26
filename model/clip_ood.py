@@ -46,6 +46,16 @@ PROMPTS = [
     "an X-ray or CT scan medical image",
     "an abstract digital art image or wallpaper with no real objects",
     "a solid color or smooth gradient background image",
+    # Added during the pre-defense review. A grayscale confusion-matrix plot
+    # was being ACCEPTED as an OCT scan at p=0.85 and classified DME with 77%
+    # confidence. The cause is structural rather than a bad threshold: this is
+    # argmax over a fixed prompt set, so the gate can only reject what some
+    # prompt actually describes. Nothing here described a chart, so the OCT
+    # prompt won by default -- the same failure mode the wallpaper prompt
+    # above was added for. Charts and screenshots are realistic mis-uploads
+    # (someone pastes a figure from a paper, or a screenshot of a viewer).
+    "a chart, graph, plot, heatmap, or data visualization figure",
+    "a screenshot of a computer screen, a document, or printed text",
 ]
 
 
