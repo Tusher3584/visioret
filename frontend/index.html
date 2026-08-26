@@ -11,6 +11,27 @@
       rel="stylesheet"
     />
     <title>Visioret</title>
+    <script>
+      // Resolve and apply the theme before first paint, otherwise the page
+      // renders in the default palette for a frame and visibly snaps to the
+      // stored one. Kept inline and dependency-free so it runs synchronously
+      // ahead of the stylesheet and the bundle.
+      (function () {
+        try {
+          var stored = localStorage.getItem("visioret_theme");
+          var theme =
+            stored === "light" || stored === "dark"
+              ? stored
+              : window.matchMedia("(prefers-color-scheme: dark)").matches
+                ? "dark"
+                : "light";
+          document.documentElement.setAttribute("data-theme", theme);
+        } catch (e) {
+          // Private mode / storage disabled -- fall back to the OS preference.
+          document.documentElement.setAttribute("data-theme", "light");
+        }
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>

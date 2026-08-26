@@ -1,46 +1,148 @@
 @import "tailwindcss";
 
+/* ---------------------------------------------------------------------------
+   Visioret design tokens.
+
+   Semantic names (canvas/surface/imaging/line/ink/accent) rather than raw
+   colour names, so light and dark are two intentional palettes rather than
+   an inverted one. Each token is a CSS variable redefined per theme, and
+   registered with Tailwind via @theme so it is usable as bg-surface /
+   text-ink / border-line etc.
+
+   Theme is driven by a data-theme attribute on <html> rather than by the
+   prefers-color-scheme media query, so a manual toggle can override the OS
+   setting. The attribute is set by an inline script in index.html before
+   first paint (see there) to avoid a flash of the wrong theme; the OS
+   preference is still the default for a first-time visitor.
+
+   "imaging" is deliberately dark in BOTH modes: grayscale OCT B-scans are
+   read on dark surfaces in real radiology practice -- it raises perceived
+   contrast of the tissue band and reduces glare around the image.
+--------------------------------------------------------------------------- */
+
+/* Point Tailwind's dark: variant at the same attribute the tokens use, so
+   utility classes like dark:text-amber-400 and the token palette always
+   agree about which theme is active. */
+@custom-variant dark (&:where([data-theme="dark"], [data-theme="dark"] *));
+
 @theme {
   --font-sans: "Inter", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   --font-mono: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
+
+  --color-canvas: var(--vr-canvas);
+  --color-surface: var(--vr-surface);
+  --color-raised: var(--vr-raised);
+  --color-imaging: var(--vr-imaging);
+  --color-imaging-line: var(--vr-imaging-line);
+  --color-line: var(--vr-line);
+  --color-line-strong: var(--vr-line-strong);
+  --color-ink: var(--vr-ink);
+  --color-muted: var(--vr-muted);
+  --color-subtle: var(--vr-subtle);
+  --color-accent: var(--vr-accent);
+  --color-accent-soft: var(--vr-accent-soft);
+  --color-accent-ink: var(--vr-accent-ink);
+
+  --radius-panel: 3px;
 }
 
-:root {
-  color-scheme: light dark;
+:root,
+[data-theme="light"] {
+  color-scheme: light;
+
+  --vr-canvas: #eceef2;
+  --vr-surface: #ffffff;
+  --vr-raised: #f5f6f9;
+  --vr-imaging: #0a0d12;
+  --vr-imaging-line: #232b38;
+  --vr-line: #d5dae2;
+  --vr-line-strong: #b6bdc9;
+  --vr-ink: #0f131a;
+  --vr-muted: #545d6b;
+  --vr-subtle: #6b7482;
+  --vr-accent: #0d7490;
+  --vr-accent-soft: #d8f1f8;
+  --vr-accent-ink: #ffffff;
+
+  /* Confusion-matrix cell fills, as RGB triplets so they can be used at a
+     data-driven alpha. Chosen per mode so cells always stay on the same side
+     of the surface luminance -- fills lighten toward white in light mode and
+     stay dark in dark mode -- which keeps the cell text readable at every
+     intensity. Alpha is capped at 0.7 by the component for the same reason. */
+  --cm-correct: 13 116 144;
+  --cm-error: 176 26 58;
+}
+
+[data-theme="dark"] {
+  color-scheme: dark;
+
+  --vr-canvas: #070910;
+  --vr-surface: #0f131b;
+  --vr-raised: #161b24;
+  --vr-imaging: #05070b;
+  --vr-imaging-line: #1f2733;
+  --vr-line: #212836;
+  --vr-line-strong: #303949;
+  --vr-ink: #e9edf4;
+  --vr-muted: #98a2b1;
+  --vr-subtle: #798494;
+  --vr-accent: #2dd4f0;
+  --vr-accent-soft: #0b3a47;
+  --vr-accent-ink: #04141a;
+
+  --cm-correct: 12 74 92;
+  --cm-error: 96 25 45;
 }
 
 body {
   margin: 0;
   font-family: var(--font-sans);
+  background-color: var(--vr-canvas);
+  color: var(--vr-ink);
+  -webkit-font-smoothing: antialiased;
 }
 
-@keyframes drift-a {
-  0%, 100% { transform: translate(0, 0) scale(1); }
-  50% { transform: translate(4%, 6%) scale(1.08); }
-}
-@keyframes drift-b {
-  0%, 100% { transform: translate(0, 0) scale(1); }
-  50% { transform: translate(-5%, -4%) scale(1.05); }
-}
-@keyframes scan-sweep {
-  0% { transform: translateY(-100%); }
-  100% { transform: translateY(100%); }
+/* Technical reference grid used behind imaging surfaces -- a calibration-grid
+   motif rather than decoration. Very low contrast on purpose. */
+.vr-grid {
+  background-image:
+    linear-gradient(to right, var(--vr-imaging-line) 1px, transparent 1px),
+    linear-gradient(to bottom, var(--vr-imaging-line) 1px, transparent 1px);
+  background-size: 32px 32px;
+  opacity: 0.28;
 }
 
-.animate-drift-a {
-  animation: drift-a 22s ease-in-out infinite;
+@keyframes vr-scan {
+  0% { transform: translateY(-110%); }
+  100% { transform: translateY(510%); }
 }
-.animate-drift-b {
-  animation: drift-b 26s ease-in-out infinite;
+.vr-scanline {
+  animation: vr-scan 2.1s cubic-bezier(0.45, 0, 0.55, 1) infinite;
 }
-.animate-scan-sweep {
-  animation: scan-sweep 1.8s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+
+@keyframes vr-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.35; }
+}
+.vr-pulse {
+  animation: vr-pulse 2s ease-in-out infinite;
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .animate-drift-a,
-  .animate-drift-b,
-  .animate-scan-sweep {
+  .vr-scanline,
+  .vr-pulse {
     animation: none;
   }
+  *,
+  *::before,
+  *::after {
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* Consistent, always-visible keyboard focus across the whole app. */
+:where(a, button, input, select, textarea, [tabindex]):focus-visible {
+  outline: 2px solid var(--vr-accent);
+  outline-offset: 2px;
+  border-radius: 2px;
 }

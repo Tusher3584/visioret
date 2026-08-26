@@ -27,6 +27,8 @@ export interface HealthResponse {
   device: string;
   checkpoint_loaded: boolean;
   classes: string[];
+  /** Whether the out-of-distribution gate is loaded and screening uploads. */
+  ood_gate_active: boolean;
 }
 
 export interface PredictionResponse {
@@ -45,6 +47,7 @@ export interface ScanSummary {
   predicted_class: string;
   confidence: number;
   original_image_url: string;
+  owner_name: string | null;
 }
 
 export interface Feedback {
@@ -52,6 +55,7 @@ export interface Feedback {
   corrected_class: string | null;
   comment: string | null;
   reviewed_at: string;
+  reviewer_name: string | null;
 }
 
 export interface FeedbackCreate {
@@ -71,6 +75,9 @@ export interface ScanDetail {
   explanation: string;
   model_version_label: string;
   feedback: Feedback | null;
+  owner_name: string | null;
+  /** Whether the current caller may record a correction on this scan. */
+  can_review: boolean;
 }
 
 export interface PerClassMetric {

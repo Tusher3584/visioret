@@ -74,3 +74,38 @@ def get_current_user(user: User | None = Depends(get_current_user_optional)) -> 
     if user is None:
         raise HTTPException(status_code=401, detail="Not authenticated.")
     return user
+
+
+# Two roles, and the split is grounded in what the data means rather than in an
+# invented org chart:
+#
+#   viewer   -- can submit scans and read their own results.
+#   reviewer -- can additionally see every scan and record corrections.
+#
+# A correction writes `feedback.corrected_class`: a human label asserting the
+# model got it wrong. Those labels are exactly what would feed back into
+# retraining, so they need provenance and a qualified author. A reviewer also
+# needs cross-user visibility precisely because reviewing other people's
+# predictions is the job.
+#
+# Roles are NOT self-assignable: registration always creates a viewer, and
+# promotion is an out-of-band administrative action (backend/grant_role.py),
+# the same way real systems bootstrap privileged accounts.
+ROLE_VIEWER = "viewer"
+ROLE_REVIEWER = "reviewer"
+
+
+def is_reviewer(user: User | None) -> bool:
+    return user is not None and user.role == ROLE_REVIEWER
+
+
+def require_reviewer(user: User = Depends(get_current_user)) -> User:
+    """403 unless the caller holds the reviewer role. Enforced server-side --
+    the frontend also hides these actions, but that is presentation only and
+    must never be the thing that actually protects them."""
+    if not is_reviewer(user):
+        raise HTTPException(
+            status_code=403,
+            detail="This action requires the reviewer role.",
+        )
+    return user

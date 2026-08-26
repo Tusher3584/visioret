@@ -43,6 +43,7 @@ class FeedbackResponse(BaseModel):
     corrected_class: str | None
     comment: str | None
     reviewed_at: datetime
+    reviewer_name: str | None = None
 
 
 class RegisterRequest(BaseModel):
@@ -93,6 +94,7 @@ class ScanSummary(BaseModel):
     predicted_class: str
     confidence: float
     original_image_url: str
+    owner_name: str | None = None
 
 
 class ScanDetail(BaseModel):
@@ -106,3 +108,6 @@ class ScanDetail(BaseModel):
     explanation: str
     model_version_label: str
     feedback: FeedbackResponse | None = None
+    owner_name: str | None = None
+    # Whether *this* caller may record a correction on this scan.
+    can_review: bool = False

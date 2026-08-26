@@ -98,18 +98,22 @@ export async function predict(file: File): Promise<PredictionResponse> {
   return handleResponse<PredictionResponse>(response);
 }
 
+// These three send the token because what they return now depends on who is
+// asking: scan visibility is scoped by owner/role, and metrics are
+// reviewer-only. Without the header the API would treat the caller as
+// anonymous and silently return the wrong set.
 export async function listScans(): Promise<ScanSummary[]> {
-  const response = await fetch(`${API_BASE_URL}/api/scans`);
+  const response = await fetch(`${API_BASE_URL}/api/scans`, { headers: authHeaders() });
   return handleResponse<ScanSummary[]>(response);
 }
 
 export async function getScan(scanId: number): Promise<ScanDetail> {
-  const response = await fetch(`${API_BASE_URL}/api/scans/${scanId}`);
+  const response = await fetch(`${API_BASE_URL}/api/scans/${scanId}`, { headers: authHeaders() });
   return handleResponse<ScanDetail>(response);
 }
 
 export async function fetchMetrics(): Promise<EvaluationMetric[]> {
-  const response = await fetch(`${API_BASE_URL}/api/metrics`);
+  const response = await fetch(`${API_BASE_URL}/api/metrics`, { headers: authHeaders() });
   return handleResponse<EvaluationMetric[]>(response);
 }
 

@@ -33,6 +33,8 @@ from backend.auth import (  # noqa: E402
     get_current_user,
     get_current_user_optional,
     hash_password,
+    is_reviewer,
+    require_reviewer,
     verify_password,
 )
 from backend.db.model_version import get_or_create_model_version  # noqa: E402
@@ -149,7 +151,10 @@ DATASET_SPLIT_LABELS = {
 
 
 @app.get("/api/metrics", response_model=list[EvaluationMetricResponse])
-def get_metrics(db: Session = Depends(get_db)):
+def get_metrics(
+    db: Session = Depends(get_db),
+    _reviewer: User = Depends(require_reviewer),
+):
     """Latest evaluation results for the currently deployed model, one row
     per dataset split that's been evaluated (see model/evaluate.py and
     model/evaluate_cross_dataset.py -- neither runs automatically, so this
@@ -247,9 +252,34 @@ async def predict_endpoint(
     )
 
 
+def _visible_scans_query(db: Session, current_user: User | None):
+    """Scans the caller is allowed to see.
+
+    Reviewers see everything (reviewing other people's predictions is the
+    point of the role). Everyone else sees only their own -- and for an
+    anonymous caller "their own" means the scans that were also submitted
+    anonymously, so a signed-out demo still has a usable history.
+    """
+    query = db.query(Scan)
+    if is_reviewer(current_user):
+        return query
+    if current_user is None:
+        return query.filter(Scan.user_id.is_(None))
+    return query.filter(Scan.user_id == current_user.id)
+
+
 @app.get("/api/scans", response_model=list[ScanSummary])
-def list_scans(db: Session = Depends(get_db), limit: int = 50):
-    scans = db.query(Scan).order_by(Scan.uploaded_at.desc()).limit(limit).all()
+def list_scans(
+    db: Session = Depends(get_db),
+    limit: int = 50,
+    current_user: User | None = Depends(get_current_user_optional),
+):
+    scans = (
+        _visible_scans_query(db, current_user)
+        .order_by(Scan.uploaded_at.desc())
+        .limit(limit)
+        .all()
+    )
     results = []
     for scan in scans:
         if not scan.predictions:
@@ -262,14 +292,21 @@ def list_scans(db: Session = Depends(get_db), limit: int = 50):
                 predicted_class=latest.predicted_class,
                 confidence=latest.confidence,
                 original_image_url=scan.file_path,
+                owner_name=scan.user.name if scan.user else None,
             )
         )
     return results
 
 
 @app.get("/api/scans/{scan_id}", response_model=ScanDetail)
-def get_scan(scan_id: int, db: Session = Depends(get_db)):
-    scan = db.query(Scan).filter_by(id=scan_id).first()
+def get_scan(
+    scan_id: int,
+    db: Session = Depends(get_db),
+    current_user: User | None = Depends(get_current_user_optional),
+):
+    # Filtered through the same visibility rule as the list, so a scan you
+    # cannot see in history cannot be opened by guessing its URL either.
+    scan = _visible_scans_query(db, current_user).filter(Scan.id == scan_id).first()
     if not scan or not scan.predictions:
         raise HTTPException(status_code=404, detail="Scan not found.")
 
@@ -288,6 +325,8 @@ def get_scan(scan_id: int, db: Session = Depends(get_db)):
         explanation=latest.gradcam_result.explanation,
         model_version_label=latest.model_version.version_label,
         feedback=_feedback_response(latest.feedback),
+        owner_name=scan.user.name if scan.user else None,
+        can_review=is_reviewer(current_user),
     )
 
 
@@ -299,6 +338,7 @@ def _feedback_response(feedback: Feedback | None) -> FeedbackResponse | None:
         corrected_class=feedback.corrected_class,
         comment=feedback.comment,
         reviewed_at=feedback.reviewed_at,
+        reviewer_name=feedback.reviewer.name if feedback.reviewer else None,
     )
 
 
@@ -307,12 +347,16 @@ def submit_feedback(
     scan_id: int,
     body: FeedbackCreate,
     db: Session = Depends(get_db),
-    current_user: User | None = Depends(get_current_user_optional),
+    current_user: User = Depends(require_reviewer),
 ):
     """Flags the scan's latest prediction as correct/incorrect, optionally
     with the corrected class. Upserts -- resubmitting replaces the previous
     feedback for that prediction, since `feedback.prediction_id` is unique
-    (one review per prediction)."""
+    (one review per prediction).
+
+    Reviewer-only: a correction is a human label asserting the model was
+    wrong, and is the kind of record that would feed back into retraining,
+    so it needs an identified and qualified author."""
     scan = db.query(Scan).filter_by(id=scan_id).first()
     if not scan or not scan.predictions:
         raise HTTPException(status_code=404, detail="Scan not found.")
@@ -335,7 +379,7 @@ def submit_feedback(
 
     feedback = Feedback(
         prediction_id=latest.id,
-        reviewed_by=current_user.id if current_user else None,
+        reviewed_by=current_user.id,
         is_correct=body.is_correct,
         corrected_class=body.corrected_class if not body.is_correct else None,
         comment=body.comment,

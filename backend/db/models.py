@@ -24,7 +24,9 @@ class User(Base):
     name: Mapped[str] = mapped_column(String(120))
     email: Mapped[str] = mapped_column(String(255), unique=True)
     password_hash: Mapped[str] = mapped_column(String(255))
-    role: Mapped[str] = mapped_column(String(30), default="researcher")
+    # "viewer" or "reviewer" -- see backend/auth.py for what each may do.
+    # Always created as viewer; promotion is an out-of-band admin action.
+    role: Mapped[str] = mapped_column(String(30), default="viewer")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
 
     scans: Mapped[list["Scan"]] = relationship(back_populates="user")
@@ -103,6 +105,7 @@ class Feedback(Base):
     reviewed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
 
     prediction: Mapped["Prediction"] = relationship(back_populates="feedback")
+    reviewer: Mapped["User | None"] = relationship(foreign_keys=[reviewed_by])
 
 
 class EvaluationMetric(Base):

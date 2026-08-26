@@ -297,6 +297,97 @@ was no reason not to. **Could not get final visual (screenshot)
 confirmation in this session for that same reason -- user should verify
 the live animations directly at localhost:5173.**
 
+**Round 3 (2026-08-25/26) — full structural redesign.** Round 2 was
+correctly rejected: it kept the same information architecture and only
+added motion. This round replaced the architecture itself, driven by a
+written brief (`UI_REDESIGN_BRIEF.md`).
+
+Core move: the 768px centred card-stack became a **two-column analysis
+workspace** at `max-w-[1600px]` -- imaging holds the wide left column, a
+380px sticky rail on the right carries verdict -> distribution ->
+interpretation -> review. Below `xl` the rail drops underneath in the same
+order. Scan images went from ~350px to 390x260 side by side, with
+Compare / Original / Grad-CAM view modes and a full-screen lightbox.
+
+Design system: semantic tokens (`canvas`/`surface`/`imaging`/`line`/`ink`/
+`muted`/`accent`) as CSS variables registered through Tailwind v4 `@theme`,
+so light and dark are two designed palettes rather than an inversion. The
+`imaging` surface stays dark in **both** modes -- grayscale OCT is read on
+dark surfaces in real radiology practice. Panels use thin borders and 3px
+radius with no drop shadows; accent moved off generic blue to a technical
+cyan; class colours are now used strictly as data indicators.
+
+Structure: 5 pages + 18 components + 2 lib modules, replacing 10 flat
+components. `ScanAnalysis` is shared verbatim by Predict and Scan Detail,
+so there is exactly one implementation of "what a result looks like".
+Notable pieces: real drag-and-drop `UploadWorkspace` (no raw file input),
+the Grad-CAM intensity legend moved *into* the Interpretation panel header
+so overlay and reasoning are tied together, a dense `ScanArchive` table
+with client-side class filter / sort / scan-ID search, and a
+row-normalised confusion matrix tinted so correct-vs-error structure reads
+before any number does.
+
+**Four real bugs found and fixed during verification:**
+1. `HealthResponse` in `api/types.ts` was missing `ood_gate_active` -- the
+   type had drifted from what the backend actually returns.
+2. The new header was a single flex row and overflowed horizontally below
+   ~360px (the old one stacked on mobile; mine didn't). Rewritten to wrap
+   the nav onto a full-width tab strip. Verified clean at 320px and 375px.
+3. The image lightbox restored focus to `<body>` instead of the trigger,
+   and had no Tab trap. Both fixed -- trigger now focuses itself on click,
+   and Tab cycles within the dialog.
+4. **Most serious:** `AnimatedNumber` and the probability bars animate
+   *from* zero via requestAnimationFrame, which browsers throttle in a
+   hidden/background tab -- so the metrics page could display **0.0%** when
+   the true value was 95.2%, and bars could sit empty. That is
+   misinformation, not a missing animation. Added `lib/motion.ts`
+   (`canAnimate`) so both render the true value immediately whenever the
+   animation cannot be trusted to run, plus a `visibilitychange` guard that
+   snaps an in-flight count-up to the real figure. Verified: correct values
+   now render even with `document.hidden === true`.
+
+**Verified against the deployed nginx build** (not the dev server):
+two-column workspace at 821px+380px, images loading, zero horizontal
+overflow on all five routes at 375px and 320px, clean h1->h2->h3 outline
+everywhere, WCAG AA contrast in both modes (tightest 4.72, including
+confusion-matrix cells at maximum tint), visible focus rings, lightbox
+keyboard flow (Escape / arrows / Tab trap / focus restore), reduced-motion
+CSS and `useReducedMotion` wired in every animated component, archive
+filtering, and light mode. Wide tables scroll inside their own containers
+rather than breaking the page.
+
+**Theme switch (2026-08-26).** Added a manual light/dark toggle -- the app
+previously followed `prefers-color-scheme` with no way to override it.
+
+Theming moved off the media query onto a `data-theme` attribute on `<html>`,
+with Tailwind's `dark:` variant repointed at the same attribute
+(`@custom-variant dark`) so utility classes and the token palette can never
+disagree about which theme is active. An inline script in `index.html`
+resolves and applies the theme before first paint, so there is no flash of
+the wrong palette on load. A first-time visitor still gets their OS
+preference and keeps following it live; the first click stores an explicit
+choice which then wins (`ThemeContext.tsx`).
+
+The control is a 32px circular button showing the theme you would get by
+clicking -- sun in dark mode, moon in light -- counter-rotating through each
+other so the swap reads as one turn of a dial.
+
+**Bug found and fixed while building it, the third of its kind:** the first
+version used `AnimatePresence mode="wait"`, which *gates* the incoming icon
+on the outgoing one's exit animation completing. Since requestAnimationFrame
+is throttled in background tabs, that exit can never finish and the button
+gets stranded showing the wrong symbol -- verified happening. Rewritten so
+both icons stay mounted and their resting state is plain CSS classes with a
+CSS transition: which icon shows is *information*, so it has to be correct
+even when no animation ever runs. Framer is left to the tap/hover flourish,
+where being skipped costs nothing. This is the same principle already
+applied to `AnimatedNumber` and the probability bars -- an animation must
+never decide whether content exists or what it says.
+
+Verified live: initial state follows the OS, clicking flips theme + palette +
+`color-scheme` + aria-label + icon, the choice persists across reload via the
+pre-paint script, and both directions round-trip correctly.
+
 ## Checkpoint 7 — Evaluation metrics integrated into the app ✅ DONE
 
 - [x] Extended `EvaluationMetric` (migration `263d6fc8f6f4`) with
@@ -367,6 +458,65 @@ than a gated clinical system.
       token, authenticated predict correctly sets `scan.user_id`,
       authenticated feedback correctly sets `feedback.reviewed_by`, logout
       clears the token and reverts the nav.
+
+**Round 2 (2026-08-26) -- signing in was doing nothing.** User asked what
+privileges login actually granted, and the honest answer was: none. Audit
+confirmed `get_current_user` (the 401-ing dependency) guarded exactly one
+endpoint -- `/api/auth/me`, which only reports whether you are logged in.
+Everything else was open or optional-auth. `/api/scans` returned every
+user's scans with no filtering, `/api/scans/{id}` had no ownership check,
+and `role` was stored, defaulted, returned in responses, and **never
+compared against anything anywhere**. Login wrote two foreign keys that
+nothing read back. That is authentication with no authorization.
+
+Replaced the placeholder `researcher` role with two roles that are
+enforced (migration `b2abbe5bc236`; existing accounts migrated to
+`reviewer` so nobody lost access they already had):
+
+| | `viewer` (default) | `reviewer` | anonymous |
+|---|---|---|---|
+| Analyze a scan | yes | yes | yes |
+| Sees in archive | own scans | **all** scans | anonymous scans |
+| Open scan by URL | own only (404 otherwise) | any | anonymous only |
+| Record a correction | **no** (403) | yes | no (401) |
+| View model metrics | **no** (403) | yes | no (401) |
+
+The split is grounded in what the data means, not an invented org chart:
+a correction writes `feedback.corrected_class`, a human label asserting the
+model was wrong, which is exactly what would feed back into retraining --
+so it needs provenance and a qualified author. A reviewer needs
+cross-user visibility precisely *because* reviewing other people's
+predictions is the job. Note the deliberate asymmetry: ownership governs
+**visibility**, role governs **authority to label**, so a viewer can see
+their own scan but still cannot assert the model was wrong on it.
+
+Roles are **not self-assignable** -- registration always creates a viewer.
+Promotion is an out-of-band admin action via the new
+`backend/grant_role.py` (`--list`, or `EMAIL ROLE`), the way real systems
+bootstrap privileged accounts. Enforcement is server-side
+(`require_reviewer` in `backend/auth.py`); the frontend also hides these
+affordances but that is presentation only.
+
+Attribution is now actually visible: `owner_name` on scan summaries and
+detail, `reviewer_name` on feedback, the role shown beside the user's name
+in the header, a "Submitted by" column that appears only for reviewers,
+and the archive description stating whose scans you are looking at.
+
+**Bug found and fixed during verification:** `listScans`, `getScan` and
+`fetchMetrics` in `api/client.ts` never sent the auth token -- they had not
+needed it while everything was public. After scoping visibility by
+identity, the frontend was still calling them anonymously, so a signed-in
+viewer saw the 34 anonymous scans instead of their own 1. Caught because
+the API returned 1 while the DOM rendered 34. Fixed by adding
+`authHeaders()` to all three.
+
+Verified live for all three states (anonymous / viewer / reviewer):
+metrics 401/403/200, corrections 401/403/200, archive counts 34/1/37,
+direct-URL access to a non-owned scan 404s for a viewer and 200s for a
+reviewer, a viewer gets 403 correcting even their own scan, the Metrics
+nav link is hidden for non-reviewers, the review panel explains why it is
+locked rather than silently hiding, and the "Submitted by" column appears
+only for reviewers.
 
 ## Checkpoint 10 — Accessibility pass ✅ DONE (incl. mobile)
 
