@@ -1,15 +1,21 @@
-"""Grant or revoke the reviewer role.
+"""Grant or revoke a role directly against the database.
 
 Roles are deliberately NOT self-assignable through the API: registration
 always creates a viewer, so nobody can hand themselves the ability to write
 correction labels. Promotion is an administrative action performed
 out-of-band, which is how real systems bootstrap privileged accounts.
 
+This script is also the ONLY way to create an admin. Admins can promote
+others between viewer and reviewer from the app, but the admin role itself
+never spreads through the API -- it always originates here, from someone with
+direct database access.
+
 Usage (from the project root):
 
     # inside Docker
     docker compose exec backend python -m backend.grant_role --list
     docker compose exec backend python -m backend.grant_role user@example.com reviewer
+    docker compose exec backend python -m backend.grant_role you@example.com admin
 
     # against a local Postgres
     python -m backend.grant_role user@example.com reviewer
@@ -18,11 +24,10 @@ Usage (from the project root):
 import argparse
 import sys
 
-from backend.auth import ROLE_REVIEWER, ROLE_VIEWER
+from backend.auth import ROLES
 from backend.db.models import User
 from backend.db.session import SessionLocal
 
-ROLES = (ROLE_VIEWER, ROLE_REVIEWER)
 
 
 def main() -> int:

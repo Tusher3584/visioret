@@ -1,4 +1,4 @@
-import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
+import { motion, useReducedMotion } from "framer-motion";
 import { useState } from "react";
 import { ApiError, submitFeedback } from "../../api/client";
 import type { Feedback } from "../../api/types";
@@ -58,12 +58,15 @@ export function ReviewPanel({
     setMode("correcting");
   }
 
+  // Entrance only, no exit and no AnimatePresence: these branches are mutually
+  // exclusive states of a control, and gating the incoming state on the
+  // outgoing one's exit animation can leave the panel showing a stale state if
+  // that animation never runs (background tabs throttle rAF).
   const motionProps = reduceMotion
     ? {}
     : {
         initial: { opacity: 0, y: -4 },
         animate: { opacity: 1, y: 0 },
-        exit: { opacity: 0, y: -4 },
         transition: { duration: 0.16 },
       };
 
@@ -76,7 +79,6 @@ export function ReviewPanel({
         Researcher review
       </h3>
 
-      <AnimatePresence mode="wait">
         {/* No reviewer role: show any existing review read-only, and say plainly
             why the controls are absent rather than silently hiding them. */}
         {!canReview && feedback === null && (
@@ -193,7 +195,6 @@ export function ReviewPanel({
             </div>
           </motion.div>
         )}
-      </AnimatePresence>
 
       {error && (
         <p role="alert" className="mt-2 text-xs text-rose-700 dark:text-rose-300">

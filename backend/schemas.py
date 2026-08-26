@@ -57,10 +57,40 @@ class LoginRequest(BaseModel):
     password: str
 
 
+class ProfileUpdate(BaseModel):
+    """Partial update of the signed-in account. Every field optional; a
+    password change additionally requires the current password."""
+
+    name: str | None = None
+    current_password: str | None = None
+    new_password: str | None = None
+
+
 class UserResponse(BaseModel):
     id: int
     name: str
     email: str
+    role: str
+
+
+class AdminUserRow(BaseModel):
+    """One account as seen from the admin user list."""
+
+    id: int
+    name: str
+    email: str
+    role: str
+    created_at: datetime
+    scans_submitted: int
+    reviews_recorded: int
+    # True for the requesting admin's own row -- the UI disables self-editing,
+    # and the server rejects it regardless.
+    is_self: bool
+    # False when the row cannot be edited through the API at all (other admins).
+    is_editable: bool
+
+
+class RoleUpdate(BaseModel):
     role: str
 
 

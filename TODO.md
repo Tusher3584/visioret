@@ -388,6 +388,146 @@ Verified live: initial state follows the OS, clicking flips theme + palette +
 `color-scheme` + aria-label + icon, the choice persists across reload via the
 pre-paint script, and both directions round-trip correctly.
 
+**Favicon + account menu (2026-08-26).**
+
+*Favicon:* the app was still shipping Vite's purple lightning bolt
+(`public/favicon.svg`), plus an unused `public/icons.svg` of Vite scaffold
+icons. Replaced with a Visioret mark -- retinal contour and focal point on a
+dark rounded tile; the reticle corner ticks from the in-app logo are dropped
+because they turn to mush at 16px. Added `apple-touch-icon`, `theme-color`,
+and a description meta; deleted the unused icons file.
+
+*Account menu:* the header previously showed a bare name plus a "Sign out"
+link. Replaced with a generated avatar and a proper dropdown (`UserMenu.tsx`)
+containing the account's name/email/role, "Edit profile", and "Sign out".
+Implements the menu-button pattern properly -- aria-haspopup/aria-expanded,
+role="menu"/"menuitem", Escape and click-outside to dismiss, arrow-key
+movement, focus returned to the trigger on close.
+
+Avatars are GitHub-style identicons generated locally (`lib/identicon.ts`):
+FNV-1a hash of the email drives a 5x5 grid mirrored about the centre column,
+with hue from the hash and fixed saturation/lightness so every generated
+colour stays legible on both palettes. Deliberately **not** Gravatar, which
+would send a hash of every user's email to a third party on each page load --
+not a reasonable thing for a medical research tool to do just to draw an
+avatar.
+
+"Edit profile" is backed by a real endpoint rather than being a dead button:
+new `PATCH /api/auth/me` (name, and password with current-password
+confirmation) plus a `/profile` page. It deliberately cannot change `role`
+(administrative grant, never self-assignable) or `email` (the account's
+identity key) -- verified that posting `role: "reviewer"` in the body is
+silently ignored and the account stays a viewer.
+
+**Four instances of one bug class found and fixed.** All were the same
+mistake: letting an animation gate whether content exists or updates, when
+requestAnimationFrame is throttled in hidden/background tabs so that
+animation may never run.
+
+1. `ThemeToggle` -- `AnimatePresence mode="wait"` held the incoming icon
+   until the outgoing one exited, stranding the button showing the wrong
+   symbol. Rewritten with both icons mounted and CSS-transitioned.
+2. `UserMenu` -- the exit animation kept the closed menu mounted at
+   `opacity: 0` with two still-focusable items: an invisible keyboard trap
+   where someone could tab onto a "Sign out" they cannot see.
+3. `App.tsx` route transitions -- `mode="wait"` held the incoming route until
+   the outgoing page finished animating out, so **navigation silently did not
+   happen**: the URL changed and the old page stayed on screen. Caught when
+   clicking "Edit profile" left the Predict page rendered at `/profile`.
+4. `ReviewPanel` -- submitting a review would not show the recorded result
+   until the previous state finished exiting.
+
+All four now animate on entrance only, with no exit gating; state changes and
+unmounts are immediate and unconditional. Combined with the earlier
+`AnimatedNumber` / probability-bar fixes, the rule applied throughout is:
+**an animation may decorate a transition, but must never decide whether
+content exists, what it says, or whether navigation occurred.**
+
+Verified live: favicon served, avatar menu opens/closes cleanly with zero
+focusable items after close, Escape returns focus to the trigger, "Edit
+profile" navigates and renders, profile rename works, empty name and wrong
+current-password rejected (400), unauthenticated PATCH rejected (401), role
+escalation ignored, and identicons are stable per user and distinct between
+users (hue 152 vs 78, 7 vs 11 filled cells).
+
+**Admin role + account management (2026-08-26).** Follow-up to the roles
+work: promoting someone required shelling into the container, which is bad
+friction for a live defense. Added a third role.
+
+| | viewer | reviewer | **admin** |
+|---|---|---|---|
+| Analyze, own scans | yes | yes | yes |
+| All scans, corrections, metrics | no | yes | **yes** (superset) |
+| See account list, promote/demote | no | no | **yes** |
+
+`admin` is created **only** by hand against the database
+(`backend/grant_role.py`, which now accepts `admin`). It is never obtainable
+through the API, so administrative privilege always originates from someone
+with database access rather than from the application itself. Admin is a
+superset of reviewer -- an administrator who could not read the metrics they
+administer would be strange.
+
+New endpoints, both `require_admin`: `GET /api/admin/users` (every account
+with registration date and real scan/review counts) and
+`PATCH /api/admin/users/{id}/role`. New `/admin` page ("Accounts") with a
+per-row role dropdown, plus a nav link visible only to admins and a redirect
+for anyone else who reaches the URL directly.
+
+Three escalation paths deliberately refused, all verified returning 400:
+granting `admin` through the API, modifying **another** admin (so admins
+cannot demote rivals or spread the role), and changing **your own** role (so
+an admin cannot lock themselves out or quietly re-grant themselves
+something). Non-editable rows are labelled in the UI as "managed in database"
+or "cannot edit own role" rather than silently disabled.
+
+Verified live: admin list 401 anonymous / 403 viewer / **403 reviewer** / 200
+admin; promotion and demotion round-trip through the UI dropdown with a
+confirmation notice; the three refusals above; 404 for an unknown account;
+garbage role rejected; admin inherits metrics access (200); a reviewer
+hitting `/admin` is redirected to `/` with the Accounts link hidden. The
+temporary test admin used for verification was deleted afterwards.
+
+**Anonymous history is now session-scoped (2026-08-26).** User asked whether
+history was kept for everyone or only account holders, and checking exposed a
+real privacy defect: every scan was persisted regardless of sign-in, and all
+**anonymous scans were pooled globally** -- any unauthenticated visitor could
+see every other unauthenticated visitor's scans (35 of them at the time).
+Worse, the History page copy claimed they were "scans analysed in this
+browser", implying a per-browser boundary that did not exist. For an app
+handling medical images that was the wrong default and the wrong claim.
+
+Fixed with an opaque per-session id (`scans.anon_session`, migration
+`c6c94791979f`). The frontend generates it into **`sessionStorage`** -- not
+localStorage, and that choice is the feature: sessionStorage dies with the
+browser/tab, so an anonymous visitor's history lasts exactly as long as their
+session and is then unreachable. It is sent as `X-Anon-Session` on the scan
+endpoints.
+
+Visibility now: reviewers/admins see everything; a signed-in viewer sees only
+scans they own; an anonymous caller sees only scans carrying their own session
+id. A **missing** session id deliberately matches nothing rather than matching
+`anon_session IS NULL` -- the latter would have re-exposed the entire pooled
+history to any caller who simply omitted the header. Signed-in scans store
+NULL for the session id even if a header is present, so they can never be
+reached through a session.
+
+Unreachable is not the same as deleted, so added `backend/purge_anonymous.py`
+(`--dry-run`, `--all`, `--older-than-hours`, default 24) which removes
+anonymous scans together with their prediction/Grad-CAM/feedback rows and
+their JPEGs on disk. Nothing purges automatically because the server has no
+reliable way to know a browser closed. Ran it once against the legacy pooled
+data: 33 scans and 66 image files removed, media directory 90 -> 24 files.
+
+Verified live: the 35 legacy pooled scans are now visible to nobody (0 for
+any caller); two anonymous sessions each see only their own scan
+(AAA -> [40], BBB -> [41]); no header sees []; cross-session URL guessing
+returns 404 while the owning session gets 200; a signed-in scan submitted
+*while also sending* a session header is 404 for that session and 200 for its
+owner; reviewers still see all. Frontend confirmed generating the id into
+sessionStorage (absent from localStorage) and the misleading copy replaced
+with "Scans from this browser session only. Sign in to keep a history that
+persists."
+
 ## Checkpoint 7 — Evaluation metrics integrated into the app ✅ DONE
 
 - [x] Extended `EvaluationMetric` (migration `263d6fc8f6f4`) with

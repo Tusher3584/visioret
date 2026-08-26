@@ -8,9 +8,14 @@ interface AuthContextValue {
   /** True only for the reviewer role. Presentation convenience -- the server
    *  enforces this independently; never rely on it for actual protection. */
   isReviewer: boolean;
+  /** Admin implies reviewer -- see backend/auth.py. */
+  isAdmin: boolean;
   login: (email: string, password: string) => Promise<void>;
   register: (name: string, email: string, password: string) => Promise<void>;
   logout: () => void;
+  /** Replace the cached user after a profile edit, so the header/menu update
+   *  without a reload. */
+  setUser: (user: User) => void;
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null);
@@ -45,7 +50,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   return (
     <AuthContext.Provider
-      value={{ user, isLoading, isReviewer: user?.role === "reviewer", login, register, logout }}
+      value={{
+        user,
+        isLoading,
+        isReviewer: user?.role === "reviewer" || user?.role === "admin",
+        isAdmin: user?.role === "admin",
+        login,
+        register,
+        logout,
+        setUser,
+      }}
     >
       {children}
     </AuthContext.Provider>

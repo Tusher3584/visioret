@@ -4,13 +4,16 @@ import { useAuth } from "../../context/AuthContext";
 import { LogoMark } from "./LogoMark";
 import { SystemStatus } from "./SystemStatus";
 import { ThemeToggle } from "./ThemeToggle";
+import { UserMenu } from "./UserMenu";
 
 const NAV_LINKS = [
-  { to: "/", label: "Predict", end: true, reviewerOnly: false },
-  { to: "/history", label: "History", end: false, reviewerOnly: false },
+  { to: "/", label: "Predict", end: true, reviewerOnly: false, adminOnly: false },
+  { to: "/history", label: "History", end: false, reviewerOnly: false, adminOnly: false },
   // Metrics is reviewer-only server-side; hiding it here avoids offering a
   // link that would only return 403.
-  { to: "/metrics", label: "Metrics", end: false, reviewerOnly: true },
+  { to: "/metrics", label: "Metrics", end: false, reviewerOnly: true, adminOnly: false },
+  // Account management is admin-only server-side; same reasoning as Metrics.
+  { to: "/admin", label: "Accounts", end: false, reviewerOnly: false, adminOnly: true },
 ];
 
 /**
@@ -20,7 +23,7 @@ const NAV_LINKS = [
  * are only three destinations.
  */
 export function Header() {
-  const { user, isReviewer, isLoading, logout } = useAuth();
+  const { user, isReviewer, isAdmin, isLoading, logout } = useAuth();
   const navigate = useNavigate();
 
   return (
@@ -41,23 +44,13 @@ export function Header() {
           <ThemeToggle />
           {!isLoading &&
             (user ? (
-              <div className="flex items-center gap-2 text-xs">
-                <span className="hidden text-muted md:inline">
-                  {user.name}
-                  <span className="ml-1.5 font-mono text-[10px] uppercase tracking-wider text-subtle">
-                    {user.role}
-                  </span>
-                </span>
-                <button
-                  onClick={() => {
-                    logout();
-                    navigate("/");
-                  }}
-                  className="whitespace-nowrap font-medium text-accent hover:underline"
-                >
-                  Sign out
-                </button>
-              </div>
+              <UserMenu
+                user={user}
+                onSignOut={() => {
+                  logout();
+                  navigate("/");
+                }}
+              />
             ) : (
               <NavLink
                 to="/login"
@@ -72,7 +65,9 @@ export function Header() {
           aria-label="Primary"
           className="order-last flex w-full items-stretch border-t border-line sm:order-none sm:ml-4 sm:w-auto sm:border-t-0"
         >
-          {NAV_LINKS.filter((link) => !link.reviewerOnly || isReviewer).map((link) => (
+          {NAV_LINKS.filter(
+            (link) => (!link.reviewerOnly || isReviewer) && (!link.adminOnly || isAdmin),
+          ).map((link) => (
             <NavItem key={link.to} to={link.to} end={link.end} label={link.label} />
           ))}
         </nav>

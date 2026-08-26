@@ -11,6 +11,26 @@ export interface RegisterRequest {
   password: string;
 }
 
+export interface AdminUser {
+  id: number;
+  name: string;
+  email: string;
+  role: string;
+  created_at: string;
+  scans_submitted: number;
+  reviews_recorded: number;
+  /** The requesting admin's own row. */
+  is_self: boolean;
+  /** False for other admin accounts, which are managed only via the database. */
+  is_editable: boolean;
+}
+
+export interface ProfileUpdate {
+  name?: string;
+  current_password?: string;
+  new_password?: string;
+}
+
 export interface LoginRequest {
   email: string;
   password: string;

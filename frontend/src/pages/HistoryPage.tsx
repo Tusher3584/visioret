@@ -78,7 +78,7 @@ export function HistoryPage() {
             ? "Every scan analysed by this instance, across all users. Newest first."
             : user
               ? "Scans you have analysed, newest first."
-              : "Scans analysed in this browser without signing in, newest first."
+              : "Scans from this browser session only. Sign in to keep a history that persists."
         }
         actions={
           <Link to="/">
@@ -95,7 +95,11 @@ export function HistoryPage() {
       {!error && scans && scans.length === 0 && (
         <EmptyState
           title="No scans yet"
-          description="Once you analyse a scan it will appear here, with its classification and confidence."
+          description={
+            user
+              ? "Once you analyse a scan it will appear here, with its classification and confidence."
+              : "Scans you analyse will appear here for this browser session. Closing the browser clears them — sign in to keep a lasting history."
+          }
           action={
             <Link to="/">
               <Button variant="primary" size="sm">

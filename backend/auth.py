@@ -93,10 +93,34 @@ def get_current_user(user: User | None = Depends(get_current_user_optional)) -> 
 # the same way real systems bootstrap privileged accounts.
 ROLE_VIEWER = "viewer"
 ROLE_REVIEWER = "reviewer"
+# Admin adds user management on top of everything a reviewer can do. It is
+# never obtainable through the API -- not by registering, not by another admin
+# promoting you. An admin account is created by hand against the database
+# (backend/grant_role.py), so the privilege chain always terminates in someone
+# with direct database access rather than in the app itself.
+ROLE_ADMIN = "admin"
+
+ROLES = (ROLE_VIEWER, ROLE_REVIEWER, ROLE_ADMIN)
+# What an admin is allowed to assign through the API. Deliberately excludes
+# admin, so the role cannot spread without database access.
+ASSIGNABLE_ROLES = (ROLE_VIEWER, ROLE_REVIEWER)
 
 
 def is_reviewer(user: User | None) -> bool:
-    return user is not None and user.role == ROLE_REVIEWER
+    """Admin is a superset of reviewer -- an administrator who could not read
+    the metrics they administer would be a strange kind of administrator."""
+    return user is not None and user.role in (ROLE_REVIEWER, ROLE_ADMIN)
+
+
+def is_admin(user: User | None) -> bool:
+    return user is not None and user.role == ROLE_ADMIN
+
+
+def require_admin(user: User = Depends(get_current_user)) -> User:
+    """403 unless the caller is an administrator."""
+    if not is_admin(user):
+        raise HTTPException(status_code=403, detail="This action requires the admin role.")
+    return user
 
 
 def require_reviewer(user: User = Depends(get_current_user)) -> User:

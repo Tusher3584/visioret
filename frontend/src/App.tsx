@@ -1,25 +1,31 @@
-import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
+import { motion, useReducedMotion } from "framer-motion";
 import { BrowserRouter, Route, Routes, useLocation } from "react-router-dom";
 import { Header } from "./components/layout/Header";
+import { AdminPage } from "./pages/AdminPage";
 import { AuthProvider } from "./context/AuthContext";
 import { ThemeProvider } from "./context/ThemeContext";
 import { HistoryPage } from "./pages/HistoryPage";
 import { LoginPage } from "./pages/LoginPage";
 import { MetricsPage } from "./pages/MetricsPage";
 import { PredictPage } from "./pages/PredictPage";
+import { ProfilePage } from "./pages/ProfilePage";
 import { ScanDetailPage } from "./pages/ScanDetailPage";
 
 function AnimatedRoutes() {
   const location = useLocation();
   const reduceMotion = useReducedMotion();
 
+  // Entrance only, deliberately without AnimatePresence. `mode="wait"` holds
+  // the incoming route until the outgoing one finishes animating out -- and
+  // since requestAnimationFrame is throttled in background tabs, that exit can
+  // simply never complete, leaving the URL changed but the old page still on
+  // screen. Navigation must not depend on an animation finishing. Keying on
+  // pathname still gives each page its fade-in.
   return (
-    <AnimatePresence mode="wait">
       <motion.div
         key={location.pathname}
         initial={reduceMotion ? false : { opacity: 0, y: 6 }}
         animate={{ opacity: 1, y: 0 }}
-        exit={reduceMotion ? undefined : { opacity: 0 }}
         transition={{ duration: 0.18, ease: "easeOut" }}
       >
         <Routes location={location}>
@@ -28,9 +34,10 @@ function AnimatedRoutes() {
           <Route path="/scans/:scanId" element={<ScanDetailPage />} />
           <Route path="/metrics" element={<MetricsPage />} />
           <Route path="/login" element={<LoginPage />} />
+          <Route path="/profile" element={<ProfilePage />} />
+          <Route path="/admin" element={<AdminPage />} />
         </Routes>
       </motion.div>
-    </AnimatePresence>
   );
 }
 

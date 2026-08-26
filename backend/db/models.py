@@ -37,6 +37,13 @@ class Scan(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
+    # Opaque per-browser-session id for scans submitted without an account.
+    # Lets an anonymous visitor see their own scans for the life of that
+    # session and nobody else's; the id lives in sessionStorage, so closing
+    # the browser ends the session and the history becomes unreachable.
+    # NULL for signed-in scans (ownership is user_id) and for legacy rows
+    # predating this column, which are therefore visible to nobody.
+    anon_session: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
     file_path: Mapped[str] = mapped_column(String(500))
     uploaded_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
 
