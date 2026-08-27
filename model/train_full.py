@@ -82,6 +82,45 @@ UNFREEZE_PREFIXES = ("layer3.", "layer4.", "fc.")
 RETRY_ATTEMPTS = 5
 RETRY_DELAY_SECONDS = 5
 
+# One seed for everything that is random in a run: the freshly-initialized fc
+# head, DataLoader shuffle order, and the augmentation transforms. The
+# patient SPLIT was already deterministic (GroupShuffleSplit(random_state=42)
+# plus the persisted patient_split.json) -- this covers the rest, so a rerun
+# on the same data reproduces the same numbers instead of landing somewhere
+# nearby. For a project whose deliverable IS the measured accuracy, "roughly
+# reproducible" is not reproducible.
+#
+# Note: this makes runs repeatable, not bitwise-identical across machines --
+# cuDNN picks algorithms by hardware and some are nondeterministic. Forcing
+# torch.use_deterministic_algorithms(True) would fix that too but costs real
+# training speed, which is not a trade worth making here.
+SEED = 42
+
+
+def seed_everything(seed: int = SEED):
+    import random
+
+    import numpy as np
+
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    torch.cuda.manual_seed_all(seed)
+
+
+def seeded_worker_init(worker_id):
+    """DataLoader worker_init_fn: seeds each worker AND applies the OpenCV
+    thread limit (see model/oct_preprocessing.py -- without it, workers
+    oversubscribe the CPU and training stalls)."""
+    import random
+
+    import numpy as np
+
+    worker_seed = torch.initial_seed() % 2**32
+    np.random.seed(worker_seed)
+    random.seed(worker_seed)
+    limit_worker_cv2_threads(worker_id)
+
 
 def robust_torch_save(obj, path):
     """torch.save with retries -- on Windows, a freshly-written large file can
@@ -92,7 +131,12 @@ def robust_torch_save(obj, path):
         try:
             torch.save(obj, path)
             return
-        except RuntimeError as exc:
+        # OSError/PermissionError too, not just RuntimeError: the same
+        # transient Windows file lock surfaces as any of these depending on
+        # where inside torch.save it hits, and retrying is correct for all of
+        # them. Catching only RuntimeError meant a lock that happened to
+        # raise PermissionError would kill a multi-hour training run.
+        except (RuntimeError, OSError) as exc:
             last_exc = exc
             time.sleep(RETRY_DELAY_SECONDS)
     raise last_exc
@@ -108,7 +152,27 @@ def get_or_create_patient_split(all_samples, split_path, log_file):
         with open(split_path, "r", encoding="utf-8") as f:
             split = json.load(f)
         log(f"Loaded existing patient split from {split_path}", log_file)
-        return set(split["train"]), set(split["val"]), set(split["test"])
+        train, val, test = set(split["train"]), set(split["val"]), set(split["test"])
+
+        # A persisted split is a fixed list of patient ids, and
+        # filter_by_patients keeps only ids that appear in it. So any patient
+        # added to the dataset AFTER the split was written is silently
+        # dropped from all three splits -- the data is simply never used, with
+        # no error. That is the safe failure (it cannot cause leakage) but it
+        # is invisible, so say it out loud.
+        known = train | val | test
+        unassigned = patient_ids_of(all_samples) - known
+        if unassigned:
+            orphan_images = sum(1 for s in all_samples if s[2] in unassigned)
+            log(
+                f"  WARNING: {len(unassigned)} patient(s) / {orphan_images} image(s) are not in "
+                f"{os.path.basename(split_path)} and will be IGNORED entirely. They were added to the "
+                "dataset after the split was created. Delete the split file to re-split from scratch "
+                "(this changes the held-out test set, so any previously reported numbers stop being "
+                "comparable).",
+                log_file,
+            )
+        return train, val, test
 
     train_samples, val_samples, test_samples = patient_grouped_three_way_split(
         all_samples, val_fraction=VAL_FRACTION, test_fraction=TEST_FRACTION
@@ -175,13 +239,19 @@ def build_dataloaders(train_samples, val_samples, class_names, batch_size, smoke
     train_ds = OCTDataset(train_samples, class_names, train_transform)
     val_ds = OCTDataset(val_samples, class_names, eval_transform)
 
+    # Explicit generator so the shuffle order is reproducible across runs,
+    # not just seeded once at process start.
+    shuffle_generator = torch.Generator()
+    shuffle_generator.manual_seed(SEED)
+
     train_loader = DataLoader(
         train_ds, batch_size=batch_size, shuffle=True, num_workers=4, pin_memory=True,
-        persistent_workers=True, worker_init_fn=limit_worker_cv2_threads,
+        persistent_workers=True, worker_init_fn=seeded_worker_init,
+        generator=shuffle_generator,
     )
     val_loader = DataLoader(
         val_ds, batch_size=batch_size, shuffle=False, num_workers=2, pin_memory=True,
-        persistent_workers=True, worker_init_fn=limit_worker_cv2_threads,
+        persistent_workers=True, worker_init_fn=seeded_worker_init,
     )
 
     train_counts = class_counts(train_samples, class_names)
@@ -244,6 +314,7 @@ def main():
         return
 
     checkpoint_path = SMOKE_TEST_CHECKPOINT_PATH if args.smoke_test else CHECKPOINT_PATH
+    seed_everything(SEED)
 
     os.makedirs(os.path.dirname(LOG_PATH), exist_ok=True)
     with open(LOG_PATH, "a", encoding="utf-8") as log_file:

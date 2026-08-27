@@ -31,12 +31,53 @@ ACCESS_TOKEN_LIFETIME = timedelta(days=7)  # a demo/research tool, not a bank --
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/login", auto_error=False)
 
 
+# bcrypt hashes at most 72 BYTES of input. bcrypt 5.x raises ValueError past
+# that instead of silently truncating, so an over-long password used to reach
+# hashpw() and surface as a 500. Note bytes, not characters: a passphrase with
+# non-ASCII characters hits this sooner than its length suggests, which is why
+# the check is done on the encoded form.
+PASSWORD_MAX_BYTES = 72
+
+
+def password_too_long(password: str) -> bool:
+    return len(password.encode("utf-8")) > PASSWORD_MAX_BYTES
+
+
 def hash_password(password: str) -> str:
     return bcrypt.hashpw(password.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
 
 
 def verify_password(password: str, password_hash: str) -> bool:
-    return bcrypt.checkpw(password.encode("utf-8"), password_hash.encode("utf-8"))
+    """False rather than raising, for any input that cannot possibly match.
+
+    Callers use this to decide 401 vs 200, so it must not raise: an over-long
+    password, or a row whose hash is empty or malformed, is simply a failed
+    login. Letting bcrypt's ValueError escape here turned "wrong password"
+    into "500 Internal Server Error".
+    """
+    if not password_hash or password_too_long(password):
+        return False
+    try:
+        return bcrypt.checkpw(password.encode("utf-8"), password_hash.encode("utf-8"))
+    except ValueError:
+        return False
+
+
+# A real bcrypt hash of a value nobody can supply, used to spend the same CPU
+# time on a login for an unknown email as for a known one. Without it,
+# verify_password is skipped entirely when the email doesn't exist, and the
+# response comes back measurably faster -- which turns login into an oracle
+# for "does this address have an account here", the exact thing the
+# deliberately-vague "Incorrect email or password" message avoids leaking.
+_TIMING_EQUALIZER_HASH = bcrypt.hashpw(b"visioret-timing-equalizer", bcrypt.gensalt()).decode("utf-8")
+
+
+def spend_password_verification_time() -> None:
+    """Burn one bcrypt verification, so a failed lookup costs what a real one does."""
+    try:
+        bcrypt.checkpw(b"visioret-timing-equalizer-miss", _TIMING_EQUALIZER_HASH.encode("utf-8"))
+    except ValueError:
+        pass
 
 
 def create_access_token(user_id: int) -> str:

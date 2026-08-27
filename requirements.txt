@@ -42,6 +42,9 @@ kagglehub>=1.0.2,<2.0.0
 
 # --- backend ---
 fastapi>=0.141.1,<1.0.0
+# Backs pydantic's EmailStr. Without it, importing EmailStr raises at startup
+# -- pydantic deliberately does not vendor an email parser.
+email-validator>=2.2.0,<3.0.0
 uvicorn[standard]>=0.52.0,<1.0.0
 python-multipart>=0.0.32,<0.1.0
 sqlalchemy>=2.0.51,<3.0.0

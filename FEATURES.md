@@ -85,9 +85,29 @@ Four public datasets are used:
 1. **Patient-grouped splitting.** Kermany's *official* train/test split leaks
    ~85% of its test patients into train (verified). It is therefore **not
    used as-is**. All data is pooled and re-split by patient ID
-   (`GroupShuffleSplit`), so no patient appears in more than one split. The
-   split is persisted (`patient_split.json`) so the held-out test set never
-   changes across reruns or resumes.
+   (`GroupShuffleSplit`). The split is persisted (`patient_split.json`) so
+   the held-out test set never changes across reruns or resumes.
+
+   **Known limitation, disclosed rather than hidden:** the grouping key is
+   `f"{class_name}-{number}"`, not the bare number. 896 of 4,657 numeric IDs
+   (19.2%) appear under more than one class folder — clinically coherent
+   (wet AMD in one eye, drusen in the fellow eye) — so one patient can be
+   split into up to three groups and scattered across splits. 5,375 of
+   13,146 test images (40.9%) are affected. The effect was **measured**
+   (`model/audit_patient_leakage.py`) and runs *opposite* to memorisation:
+
+   | Subset | n | Accuracy | Macro F1 | DRUSEN F1 |
+   |---|---|---|---|---|
+   | Full test set | 13,146 | 0.9517 | 0.9233 | 0.817 |
+   | Leaked | 5,375 | 0.9180 | 0.8878 | 0.752 |
+   | Clean | 7,771 | 0.9750 | 0.9541 | 0.882 |
+
+   The leaked group scores *lower*, because it is by construction the
+   multi-diagnosis patients — the ambiguous CNV/DRUSEN boundary cases. So
+   95.17% is conservative and **97.50% is the genuinely patient-disjoint
+   figure**. Correcting the key would require a full retrain, so it is
+   documented instead. The cross-dataset result is unaffected (OCTDL, Duke
+   and Noor all key correctly).
 2. **Per-B-scan labels for Noor.** Noor encodes the label in each *filename*
    (`003_Normal.jpg`), not just the folder — a diagnosed patient's volume
    still contains normal-looking slices. Using the folder label would inject
@@ -100,8 +120,8 @@ Four public datasets are used:
 
 ### 3.3 Measured performance (deployed checkpoint)
 
-**In-distribution** — Kermany held-out test, 13,146 images / 858 patients,
-patient-disjoint:
+**In-distribution** — Kermany held-out test, 13,146 images from patients
+reserved before any training:
 
 | Class | Precision | Recall | F1 | Support |
 |---|---|---|---|---|
@@ -381,6 +401,22 @@ Worth having ready — professors often ask "what went wrong?"
 8. **Anonymous scans pooled globally** — every anonymous visitor could see all
    others'. Fixed with session scoping.
 9. **Six animation-gating bugs** (see §6).
+10. **OOD gate accepted a chart as an OCT scan** — argmax over a fixed prompt
+    set can only reject what a prompt describes, and none described a chart.
+    Found by end-to-end probing during the pre-defense review; fixed with two
+    negative prompts and re-validated 171/171 on real OCT.
+11. **Backend Docker image was 10.7 GB** — PyPI's `torch` wheel for Linux is
+    the CUDA build, so ~2.5 GB of nvidia libraries were installed into a
+    container with no GPU. Now 3.06 GB.
+12. **Grad-CAM overlays were geometrically distorted** — the *original* was
+    being shrunk to 224×224 instead of the *heatmap* being enlarged to the
+    original's size, squashing a 768×496 scan's overlay ~35% horizontally so
+    it no longer aligned with the scan beside it in compare view.
+13. **Metrics page was permanently empty on a fresh clone** — `ModelVersion`
+    was keyed on the checkpoint's file *mtime*, which a `git clone` changes,
+    so no stored evaluation row ever matched. Now keyed on a SHA-256 of the
+    checkpoint's contents, with results committed alongside the weights and
+    seeded into an empty database at startup.
 
 ---
 
@@ -418,7 +454,13 @@ Stated explicitly so nobody assumes otherwise:
 - **Anonymous purge is manual**, not scheduled.
 - **No automated test suite** — verification to date has been manual and
   script-driven, not `pytest`/CI.
-- **No rate limiting** on the API.
+- **No rate limiting** on the API — login in particular is unthrottled, so
+  password guessing is bounded only by bcrypt's cost.
+- **Scan images are served without authentication.** `/media/...` is public to
+  anyone holding the URL; filenames are `uuid4` so they cannot be guessed, but
+  a shared link grants indefinite access. Deliberate (plain `<img>` tags
+  cannot send an Authorization header) and documented in `backend/main.py`,
+  but it is the first thing to close in any deployment with real patient data.
 - **JWT has no refresh/revocation** — a 7-day token cannot be invalidated.
 - **Metrics are reviewer-gated**, so an examiner viewing anonymously cannot
   see them.

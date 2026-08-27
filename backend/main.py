@@ -10,12 +10,12 @@ import sys
 from contextlib import asynccontextmanager
 
 import torch
-from fastapi import Depends, FastAPI, File, Header, HTTPException, UploadFile
+from fastapi import Depends, FastAPI, File, Header, HTTPException, Query, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from PIL import Image, UnidentifiedImageError
 from sqlalchemy import false as sa_false, func
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload, selectinload
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from model.inference import (  # noqa: E402
@@ -39,9 +39,11 @@ from backend.auth import (  # noqa: E402
     is_reviewer,
     require_admin,
     require_reviewer,
+    spend_password_verification_time,
     verify_password,
 )
 from backend.db.model_version import get_or_create_model_version  # noqa: E402
+from backend.db.seed_metrics import seed_evaluation_metrics  # noqa: E402
 from backend.db.models import EvaluationMetric, Feedback, GradcamResult, Prediction, Scan, User  # noqa: E402
 from backend.db.session import get_db  # noqa: E402
 from backend.schemas import (  # noqa: E402
@@ -60,10 +62,26 @@ from backend.schemas import (  # noqa: E402
     TokenResponse,
     UserResponse,
 )
-from backend.storage import MEDIA_DIR, new_scan_id, save_scan_images  # noqa: E402
+from backend.storage import MEDIA_DIR, discard_scan_images, new_scan_id, save_scan_images  # noqa: E402
 
 ROOT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 CHECKPOINT_PATH = os.path.join(ROOT_DIR, "model", "checkpoints", "resnet50_oct.pth")
+
+# An OCT B-scan is a few hundred KB. 12 MB is generous for a lossless PNG of
+# a large volume slice and still small enough that a burst of uploads cannot
+# exhaust container memory.
+MAX_UPLOAD_BYTES = 12 * 1024 * 1024
+
+# Pillow's own bomb guard. The default (~89 MP) only WARNS at 1x and raises at
+# 2x; setting it explicitly to something that comfortably exceeds any real OCT
+# scan means DecompressionBombError fires early, before the pixels are
+# allocated. The largest genuine scan seen in the four datasets is ~0.8 MP.
+Image.MAX_IMAGE_PIXELS = 64_000_000
+
+# Upper bound for GET /api/scans?limit=. Large enough that no real history
+# view needs paging, small enough that one request cannot ask the database
+# for everything.
+MAX_SCAN_LIMIT = 200
 
 model_state = {}
 
@@ -87,6 +105,11 @@ async def lifespan(app: FastAPI):
         version = get_or_create_model_version(db, CHECKPOINT_PATH, val_macro_f1)
         model_state["model_version_id"] = version.id
         model_state["model_version_label"] = version.version_label
+        # Populate the metrics page on a machine that has never run
+        # model/evaluate.py (which needs the full dataset, not in the repo).
+        # Only inserts splits that are missing, so a real local evaluation
+        # always takes precedence over the committed export.
+        seed_evaluation_metrics(db, CHECKPOINT_PATH, version.id)
     finally:
         db.close()
 
@@ -104,6 +127,27 @@ app.add_middleware(
 )
 
 os.makedirs(MEDIA_DIR, exist_ok=True)
+# Scan images and Grad-CAM overlays are served as static files, WITHOUT an
+# authorization check. This is a deliberate trade-off, not an oversight, and
+# it is the one place where the ownership rules enforced by
+# _visible_scans_query do not reach:
+#
+#   - Filenames are uuid4().hex, so a URL cannot be guessed or enumerated
+#     (2^128 keyspace) -- possession of the link is the capability.
+#   - Anyone who holds the link keeps access indefinitely, including after
+#     an anonymous session ends. A link pasted into a chat or captured in a
+#     proxy log stays live.
+#
+# It stays this way because the frontend renders these through plain <img>
+# tags, which cannot attach an Authorization header; making them private
+# needs either short-lived signed URLs or an authenticated proxy endpoint,
+# and neither is warranted for a single-instance research demo carrying no
+# patient identifiers. Any deployment holding real patient data should close
+# this before anything else.
+#
+# Path traversal is not a concern here: StaticFiles resolves and confines
+# paths itself (verified -- /media/../main.py and the percent-encoded form
+# both 404).
 app.mount("/media", StaticFiles(directory=os.path.dirname(MEDIA_DIR)), name="media")
 
 
@@ -134,12 +178,12 @@ def _user_response(user: User) -> UserResponse:
 
 @app.post("/api/auth/register", response_model=TokenResponse)
 def register(body: RegisterRequest, db: Session = Depends(get_db)):
+    # Length/format bounds (name, email, password 8..72) are enforced by
+    # RegisterRequest -- see backend/schemas.py for why they belong there.
     if db.query(User).filter_by(email=body.email).first():
         raise HTTPException(status_code=400, detail="An account with this email already exists.")
-    if len(body.password) < 8:
-        raise HTTPException(status_code=400, detail="Password must be at least 8 characters.")
 
-    user = User(name=body.name, email=body.email, password_hash=hash_password(body.password))
+    user = User(name=body.name.strip(), email=body.email, password_hash=hash_password(body.password))
     db.add(user)
     db.commit()
     db.refresh(user)
@@ -150,7 +194,14 @@ def register(body: RegisterRequest, db: Session = Depends(get_db)):
 @app.post("/api/auth/login", response_model=TokenResponse)
 def login(body: LoginRequest, db: Session = Depends(get_db)):
     user = db.query(User).filter_by(email=body.email).first()
-    if not user or not verify_password(body.password, user.password_hash):
+    if user is None:
+        # Spend the same bcrypt time we would have on a real account before
+        # answering. The message already refuses to distinguish "no such
+        # email" from "wrong password"; without this, the response time does
+        # the distinguishing instead.
+        spend_password_verification_time()
+        raise HTTPException(status_code=401, detail="Incorrect email or password.")
+    if not verify_password(body.password, user.password_hash):
         raise HTTPException(status_code=401, detail="Incorrect email or password.")
 
     return TokenResponse(access_token=create_access_token(user.id), user=_user_response(user))
@@ -179,14 +230,11 @@ def update_me(
         name = body.name.strip()
         if not name:
             raise HTTPException(status_code=400, detail="Name cannot be empty.")
-        if len(name) > 120:
-            raise HTTPException(status_code=400, detail="Name is too long.")
         user.name = name
         changed = True
 
     if body.new_password is not None:
-        if len(body.new_password) < 8:
-            raise HTTPException(status_code=400, detail="New password must be at least 8 characters.")
+        # Length bounds (8..72) come from ProfileUpdate; see backend/schemas.py.
         # Require the current password so a stolen/borrowed session cannot
         # silently lock the real owner out of their account.
         if not body.current_password or not verify_password(
@@ -348,11 +396,42 @@ async def predict_endpoint(
     if file.content_type not in ("image/jpeg", "image/png"):
         raise HTTPException(status_code=400, detail="File must be a JPEG or PNG image.")
 
+    # Reject on the declared size before reading anything. An OCT B-scan is
+    # a few hundred KB; there is no legitimate 80 MB upload here, and
+    # `await file.read()` would otherwise buffer the whole body in memory
+    # before we ever got a chance to say no.
+    if file.size is not None and file.size > MAX_UPLOAD_BYTES:
+        raise HTTPException(
+            status_code=413,
+            detail=f"File is too large. The limit is {MAX_UPLOAD_BYTES // (1024 * 1024)} MB.",
+        )
+
     contents = await file.read()
+    if len(contents) > MAX_UPLOAD_BYTES:
+        # Belt and braces: file.size comes from the client's multipart headers
+        # and a hand-rolled request can omit or understate it.
+        raise HTTPException(
+            status_code=413,
+            detail=f"File is too large. The limit is {MAX_UPLOAD_BYTES // (1024 * 1024)} MB.",
+        )
+
     try:
         image = Image.open(io.BytesIO(contents))
         image.load()
     except UnidentifiedImageError:
+        raise HTTPException(status_code=400, detail="Could not read file as an image.")
+    except Image.DecompressionBombError:
+        # A small file can declare enormous dimensions -- a 459 KB PNG
+        # expanding to 484 megapixels was accepted before this, allocating
+        # gigabytes on a half-megabyte upload.
+        raise HTTPException(
+            status_code=400,
+            detail="Image dimensions are implausibly large for an OCT scan.",
+        )
+    except Exception:
+        # Truncated files, unsupported PNG variants and broken EXIF all raise
+        # their own types here. Every one of them is a bad upload, i.e. a 400,
+        # and letting any escape turns a client error into a 500.
         raise HTTPException(status_code=400, detail="Could not read file as an image.")
 
     model = model_state["model"]
@@ -380,28 +459,37 @@ async def predict_endpoint(
     file_id = new_scan_id()
     original_url, overlay_url = save_scan_images(file_id, image, overlay)
 
-    scan = Scan(
-        file_path=original_url,
-        user_id=current_user.id if current_user else None,
-        # Only meaningful for anonymous submissions; a signed-in scan is owned
-        # by user_id and must not also be reachable via a session id.
-        anon_session=None if current_user else session_id,
-    )
-    db.add(scan)
-    db.flush()  # assigns scan.id without committing yet
+    try:
+        scan = Scan(
+            file_path=original_url,
+            user_id=current_user.id if current_user else None,
+            # Only meaningful for anonymous submissions; a signed-in scan is owned
+            # by user_id and must not also be reachable via a session id.
+            anon_session=None if current_user else session_id,
+        )
+        db.add(scan)
+        db.flush()  # assigns scan.id without committing yet
 
-    prediction = Prediction(
-        scan_id=scan.id,
-        model_version_id=model_state["model_version_id"],
-        predicted_class=class_name,
-        confidence=confidence,
-        class_probabilities=probabilities,
-    )
-    db.add(prediction)
-    db.flush()
+        prediction = Prediction(
+            scan_id=scan.id,
+            model_version_id=model_state["model_version_id"],
+            predicted_class=class_name,
+            confidence=confidence,
+            class_probabilities=probabilities,
+        )
+        db.add(prediction)
+        db.flush()
 
-    db.add(GradcamResult(prediction_id=prediction.id, heatmap_path=overlay_url, explanation=explanation))
-    db.commit()
+        db.add(GradcamResult(prediction_id=prediction.id, heatmap_path=overlay_url, explanation=explanation))
+        db.commit()
+    except Exception:
+        # The two JPEGs are already on disk at this point. A failed commit
+        # would otherwise leave them there permanently with nothing in the
+        # database referencing them -- files nobody can reach and nobody
+        # knows to delete.
+        db.rollback()
+        discard_scan_images(original_url, overlay_url)
+        raise
 
     return PredictionResponse(
         scan_id=scan.id,
@@ -439,12 +527,24 @@ def _visible_scans_query(db: Session, current_user: User | None, session_id: str
 @app.get("/api/scans", response_model=list[ScanSummary])
 def list_scans(
     db: Session = Depends(get_db),
-    limit: int = 50,
+    # Bounded: `?limit=-1` became SQL `LIMIT -1` and 500'd, and `?limit=999999`
+    # was accepted outright -- which, combined with the eager loading below,
+    # is one request asking the database for the entire table.
+    limit: int = Query(default=50, ge=1, le=MAX_SCAN_LIMIT),
     current_user: User | None = Depends(get_current_user_optional),
     session_id: str | None = Depends(anon_session_id),
 ):
     scans = (
         _visible_scans_query(db, current_user, session_id)
+        # Without these the loop below lazy-loads predictions and user per
+        # row: ~101 queries to render 50 scans. selectinload issues one extra
+        # query for all predictions; joinedload folds the owner into the main
+        # one.
+        .options(selectinload(Scan.predictions), joinedload(Scan.user))
+        # A scan with no prediction row can never be rendered, so exclude it
+        # in SQL rather than dropping it afterwards -- filtering post-limit
+        # meant `?limit=50` could return fewer than 50 while more existed.
+        .filter(Scan.predictions.any())
         .order_by(Scan.uploaded_at.desc())
         .limit(limit)
         .all()

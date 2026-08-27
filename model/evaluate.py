@@ -1,5 +1,5 @@
-"""Evaluates the trained checkpoint on the reserved, patient-disjoint test
-split (see train_full.py / model/checkpoints/patient_split.json).
+"""Evaluates the trained checkpoint on the reserved test split
+(see train_full.py / model/checkpoints/patient_split.json).
 
 The official OCT2017 test/ folder is NOT used directly here: it leaks ~85%
 of its patients into the official train/ folder (verified), so a model that
@@ -81,7 +81,13 @@ def main():
         test_ds, batch_size=BATCH_SIZE, shuffle=False, num_workers=2, worker_init_fn=limit_worker_cv2_threads
     )
 
-    print(f"Evaluating on {len(test_ds)} patient-disjoint held-out test images, classes: {class_names}")
+    print(f"Evaluating on {len(test_ds)} held-out test images, classes: {class_names}")
+    print(
+        "Note: 'held-out' here means the patient GROUP KEY was reserved before training. "
+        "That key is class-prefixed, so ~40.9% of these images belong to a patient seen "
+        "under a different class during training -- run `python -m model.audit_patient_leakage` "
+        "for the measured breakdown (the effect is conservative, not inflationary)."
+    )
 
     all_preds, all_labels = [], []
     with torch.no_grad():
@@ -97,8 +103,15 @@ def main():
     os.makedirs(os.path.dirname(REPORT_PATH), exist_ok=True)
     with open(REPORT_PATH, "w", encoding="utf-8") as f:
         f.write(
-            f"Test set: {len(test_ds)} images from {len(test_patients)} patients, "
+            f"Test set: {len(test_ds)} images from {len(test_patients)} patient group keys, "
             f"reserved from pooled train+val+test before any training (patient_split.json)\n"
+        )
+        f.write(
+            "CAVEAT: the group key is class-prefixed (see model/dataset.py's KNOWN LIMITATION),\n"
+            "so ~40.9% of these images belong to a patient seen under a different class during\n"
+            "training. Measured effect is conservative, not inflationary -- the model scores\n"
+            "LOWER on those (0.9180) than on truly-unseen patients (0.9750). Regenerate with:\n"
+            "  python -m model.audit_patient_leakage\n"
         )
         f.write(f"Checkpoint: {CHECKPOINT_PATH}\n\n")
         f.write(report)

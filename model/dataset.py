@@ -5,6 +5,39 @@ The Kermany OCT2017 filenames encode a patient id (e.g. CNV-1016042-155.jpeg
 random image-level split risks leaking a patient's images across train/val.
 This module splits by patient id instead.
 
+KNOWN LIMITATION -- read before quoting any Kermany number
+----------------------------------------------------------
+collect_samples() below keys the group as f"{class_name}-{number}", NOT the
+bare number. 896 of Kermany's 4,657 numeric ids (19.2%) appear under more
+than one class folder -- clinically coherent (wet AMD in one eye, drusen in
+the fellow eye, normal slices from both), so those really do look like one
+patient. Prefixing the class therefore splits one patient into up to three
+groups, which GroupShuffleSplit can then scatter across train/val/test.
+Result: 5,375 of the 13,146 held-out test images (40.9%) belong to a patient
+seen during training.
+
+The direction of the effect was MEASURED, not assumed (see
+model/audit_patient_leakage.py, which regenerates these numbers):
+
+    full test set   n=13146   acc=0.9517   macroF1=0.9233
+    leaked subset   n= 5375   acc=0.9180   macroF1=0.8878
+    clean subset    n= 7771   acc=0.9750   macroF1=0.9541
+
+The model does WORSE on the leaked patients, not better -- the opposite of
+memorization. Those patients are by construction the multi-diagnosis ones,
+i.e. the clinically ambiguous cases sitting on the CNV/DRUSEN boundary the
+model is weakest at. So the published 95.17% is conservative, not inflated,
+and the genuinely patient-disjoint figure is the higher 97.50%.
+
+This is deliberately NOT fixed in place. Changing the key would change which
+patients land in which split, which invalidates the persisted
+patient_split.json that the deployed checkpoint was trained against, and
+would require a full retrain to restore a coherent train/test boundary. The
+external datasets are unaffected: OCTDL keys on the bare numeric id, Duke on
+the per-patient volume folder, and Noor's class prefix is CORRECT there
+because its patient folders are numbered independently inside each class
+folder.
+
 Checkpoint 5 (see TODO.md) adds three more public OCT sources, each with its
 own quirky layout -- collect_noor/collect_octdl/collect_duke below normalize
 them into the same (filepath, class_name, patient_id) tuples Kermany uses, so
@@ -35,9 +68,29 @@ def list_class_dirs(root_dir):
     return {d.name: d.path for d in os.scandir(root_dir) if d.is_dir()}
 
 
+def kermany_numeric_patient_id(filename):
+    """The bare numeric patient id from a Kermany filename, or None.
+
+    CNV-1016042-155.jpeg -> "1016042". This is the CORRECT patient identity
+    (see the module docstring); collect_samples deliberately does not use it,
+    because the deployed checkpoint's persisted split is keyed the old way.
+    Used by model/audit_patient_leakage.py to quantify the consequences.
+    """
+    match = FILENAME_RE.match(filename)
+    return match.group(2) if match else None
+
+
 def collect_samples(*root_dirs):
     """Scans one or more ImageFolder-style roots and returns a list of
-    (filepath, class_name, patient_id) tuples."""
+    (filepath, class_name, patient_id) tuples.
+
+    NOTE the grouping key is f"{class_name}-{number}", not the bare number.
+    That is a known flaw with a measured, conservative effect -- see the
+    KNOWN LIMITATION section in this module's docstring before changing it.
+    Changing it here silently invalidates model/checkpoints/patient_split.json
+    (whose keys are in the old format), which would make evaluate.py select
+    the wrong test set rather than fail loudly.
+    """
     samples = []
     for root_dir in root_dirs:
         if not os.path.isdir(root_dir):

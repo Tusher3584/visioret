@@ -14,7 +14,12 @@ DATABASE_URL = os.environ.get(
     "DATABASE_URL", "postgresql+psycopg2://visioret:visioret@localhost:5433/visioret"
 )
 
-engine = create_engine(DATABASE_URL)
+# pool_pre_ping: check a pooled connection is still alive before handing it
+# out. Without it, every connection in the pool is dead after the database
+# restarts, and requests fail with "server closed the connection unexpectedly"
+# until the pool happens to turn over. That is not hypothetical here -- the
+# db container has been restarted mid-session more than once.
+engine = create_engine(DATABASE_URL, pool_pre_ping=True)
 SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False)
 
 

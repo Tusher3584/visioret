@@ -120,7 +120,16 @@ def main():
     print(f"Evaluating checkpoint against {mode_desc}, classes:", classes)
 
     lines = [f"Cross-dataset generalization check -- evaluating against {mode_desc}",
-             f"Checkpoint: {CHECKPOINT_PATH}", ""]
+             f"Checkpoint: {CHECKPOINT_PATH}",
+             "",
+             "HOW TO READ THIS: quote the COMBINED block at the bottom, not the per-source",
+             "macro averages. Each source covers only a subset of the four classes (Noor has",
+             "no DME; OCTDL and Duke have no CNV or DRUSEN), and sklearn still includes those",
+             "zero-support classes as 0.00 in that source's macro average -- which drags e.g.",
+             "Noor's macro avg down to 0.66 for a class it does not contain. That number is an",
+             "artefact of the label set, not a measurement of anything. Per-class rows within",
+             "each source are fine; only the per-source macro/weighted averages are misleading.",
+             ""]
     combined_labels, combined_preds = [], []
     all_present_labels = set()
 

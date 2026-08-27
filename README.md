@@ -59,12 +59,18 @@ Both figures below are measured on data the model never trained on, and both
 reports are reproducible from this repo (see
 [Training and evaluation](#training-and-evaluation)).
 
-**In-distribution** — Kermany held-out test set, 13,146 images across 858
-patients, **patient-disjoint** from training:
+**In-distribution** — Kermany held-out test set, 13,146 images from patients
+reserved before any training:
 
-| | Accuracy | Macro F1 |
-|---|---|---|
-| | **95.17%** | **92.33%** |
+| Subset | n | Accuracy | Macro F1 |
+|---|---|---|---|
+| Full reserved test set | 13,146 | **95.17%** | **92.33%** |
+| Patients never seen in training | 7,771 | **97.50%** | **95.41%** |
+
+Two rows, because the grouping key has a known flaw and the honest thing is
+to show both — see [Known limitation](#known-limitation-patient-grouping)
+below. The short version: the headline 95.17% is *conservative*, not
+inflated.
 
 **Cross-dataset generalization** — 2,712 held-out images from Noor Eye Hospital,
 OCTDL and Duke, i.e. different scanners, different hospitals, different
@@ -90,10 +96,45 @@ into the training set** — the same patient's B-scans appear on both sides. Any
 accuracy measured against that split is inflated.
 
 Visioret therefore **ignores the official split**. All images are pooled and
-re-split by patient ID using `GroupShuffleSplit`, so no patient ever appears in
-more than one split, and the split is persisted to
+re-split by patient ID using `GroupShuffleSplit`, and the split is persisted to
 `model/checkpoints/patient_split.json` so the held-out test set never changes
 between runs.
+
+### Known limitation: patient grouping
+
+The grouping key is `f"{class_name}-{number}"` rather than the bare patient
+number. **896 of Kermany's 4,657 numeric IDs (19.2%) appear under more than one
+class folder** — clinically coherent, since a patient can have wet AMD in one
+eye, drusen in the fellow eye, and normal-looking slices from both. Prefixing
+the class therefore splits one patient into up to three groups, which the
+splitter can scatter across train, val and test. **5,375 of the 13,146 test
+images (40.9%) belong to a patient seen during training.**
+
+The direction of that effect was measured, not assumed —
+`python -m model.audit_patient_leakage` regenerates this table:
+
+| Subset | n | Accuracy | Macro F1 | DRUSEN F1 |
+|---|---|---|---|---|
+| Full test set | 13,146 | 0.9517 | 0.9233 | 0.817 |
+| Leaked (patient seen in training) | 5,375 | 0.9180 | 0.8878 | 0.752 |
+| Clean (patient never seen) | 7,771 | 0.9750 | 0.9541 | 0.882 |
+
+The model scores **lower** on the leaked patients — the opposite of what
+memorisation produces. Those patients are, by construction, the
+multi-diagnosis ones: the clinically ambiguous cases sitting on the
+CNV/DRUSEN boundary where the model is weakest. So the reported 95.17% is
+conservative, and 97.50% is the genuinely patient-disjoint figure — read as
+*"performance on single-diagnosis patients never seen in training"*, since
+that subset is a different population, not a drop-in replacement.
+
+Fixing the key would change which patients land in which split, invalidating
+the persisted split the current checkpoint was trained against, and would
+require a full retrain. It is documented rather than silently corrected.
+
+**The cross-dataset result is unaffected:** OCTDL keys on the bare numeric ID,
+Duke on the per-patient volume folder, and Noor's class prefix is *correct*
+there because its patient folders are numbered independently inside each class
+folder.
 
 ## Quick start (Docker)
 

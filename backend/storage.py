@@ -29,3 +29,23 @@ def save_scan_images(scan_id: str, original_image: Image.Image, overlay_image: I
     overlay_image.convert("RGB").save(os.path.join(MEDIA_DIR, overlay_filename), quality=90)
 
     return f"/media/scans/{original_filename}", f"/media/scans/{overlay_filename}"
+
+
+def discard_scan_images(*url_paths: str | None) -> None:
+    """Delete files written by save_scan_images. Best-effort and never raises.
+
+    Used to undo the disk half of a prediction when the database half fails:
+    images are written before the transaction commits, so a rollback without
+    this leaves unreferenced JPEGs that nothing knows to clean up. Only
+    basenames are used, so a value from the database can never point outside
+    MEDIA_DIR.
+    """
+    for url_path in url_paths:
+        if not url_path:
+            continue
+        path = os.path.join(MEDIA_DIR, os.path.basename(url_path))
+        try:
+            if os.path.isfile(path):
+                os.remove(path)
+        except OSError:
+            pass

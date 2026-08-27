@@ -9,7 +9,18 @@ import torch.nn as nn
 from PIL import Image
 from torchvision import models, transforms
 
-CLASS_NAMES = ["CNV", "DME", "Drusen", "Normal"]
+# Fallback class list, used ONLY when no fine-tuned checkpoint is present
+# (load_model then builds an untrained 4-class head). Whenever a checkpoint
+# IS loaded, its own stored `classes` list wins and every caller passes that
+# through explicitly.
+#
+# Casing matters and must match what training produced: train_full.py derives
+# class names from the Kermany folder names, which are upper-case. Having this
+# fallback read "Drusen"/"Normal" meant the two spellings could differ
+# depending on whether a checkpoint had loaded -- and downstream code compares
+# these strings (explanations.py keys on them, evaluate_cross_dataset.py has
+# to .upper() around it). Keep them upper-case.
+CLASS_NAMES = ["CNV", "DME", "DRUSEN", "NORMAL"]
 
 IMAGENET_MEAN = [0.485, 0.456, 0.406]
 IMAGENET_STD = [0.229, 0.224, 0.225]
@@ -142,10 +153,28 @@ def generate_gradcam(model, image_tensor, class_index, device):
 
 
 def overlay_gradcam(original_pil_image: Image.Image, heatmap: np.ndarray, alpha: float = 0.45) -> Image.Image:
-    original = original_pil_image.convert("RGB").resize((224, 224))
-    original_np = np.array(original)
+    """Blends the heatmap onto the original image AT THE ORIGINAL'S OWN SIZE.
 
-    heatmap_uint8 = np.uint8(255 * heatmap)
+    The heatmap is resized up to the original's dimensions rather than the
+    original being squashed down to 224x224. Both directions "work", but only
+    this one is geometrically honest: OCT B-scans are not square (512x496 and
+    768x496 are both common), so shrinking a 768x496 scan into a 224x224
+    overlay compresses it ~35% horizontally. The overlay would then be a
+    different shape from the original shown beside it in the UI's compare
+    view, and a reader mapping a hot region back onto the original scan would
+    mislocate it.
+
+    The model genuinely saw a squashed 224x224 tensor -- that part is fine and
+    unchanged. Resizing the CAM back to (width, height) is simply the inverse
+    of that squash, so the overlay lands where the model actually looked.
+    """
+    original = original_pil_image.convert("RGB")
+    original_np = np.array(original)
+    height, width = original_np.shape[:2]
+
+    # cv2.resize takes (width, height); heatmap is (rows, cols) = (H, W).
+    heatmap_resized = cv2.resize(heatmap, (width, height), interpolation=cv2.INTER_LINEAR)
+    heatmap_uint8 = np.uint8(255 * np.clip(heatmap_resized, 0, 1))
     heatmap_color = cv2.applyColorMap(heatmap_uint8, cv2.COLORMAP_JET)
     heatmap_color = cv2.cvtColor(heatmap_color, cv2.COLOR_BGR2RGB)
 

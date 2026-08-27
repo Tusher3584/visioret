@@ -291,6 +291,7 @@ visioret/
     train_full.py                  # real training script: full dataset, resume/warm-start, patient split
     evaluate.py                    # precision/recall/F1/confusion matrix on held-out test set
     evaluate_cross_dataset.py       # external-generalization eval (Noor + OCTDL + Duke)
+    audit_patient_leakage.py         # R2: quantifies the class-prefixed grouping flaw
     explanations.py                  # Checkpoint 4: clinical text + heatmap-geometry description
     ood_detector.py                   # OOD gate entry point: grayscale -> CLIP (see §3)
     clip_ood.py                        # Checkpoint 1 (redesigned): CLIP zero-shot OCT check
@@ -301,6 +302,7 @@ visioret/
       resnet50_oct.pth               # THE trained model (94MB) -- committed to git
       patient_split.json              # persisted train/val/test patient-id split
       external_patient_split.json      # same, for the three external datasets
+      evaluation_metrics.json           # committed metrics export, seeds a fresh DB
       evaluation_report.txt             # in-distribution eval (shown in-app via /api/metrics)
       cross_dataset_evaluation_report.txt
       confusion_matrix.png / cross_dataset_confusion_matrix.png

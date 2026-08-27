@@ -48,7 +48,14 @@ class Scan(Base):
     uploaded_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
 
     user: Mapped["User | None"] = relationship(back_populates="scans")
-    predictions: Mapped[list["Prediction"]] = relationship(back_populates="scan")
+    # cascade: deleting a scan deletes its predictions, and (via Prediction's
+    # own cascades) their Grad-CAM results and feedback. Without this, a
+    # deleted scan left orphaned prediction rows pointing at a scan_id that
+    # no longer existed -- backend/purge_anonymous.py had to walk and delete
+    # the children by hand, which is the tell that the cascade was missing.
+    predictions: Mapped[list["Prediction"]] = relationship(
+        back_populates="scan", cascade="all, delete-orphan"
+    )
 
 
 class ModelVersion(Base):
