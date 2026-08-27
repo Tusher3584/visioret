@@ -10,7 +10,7 @@ import sys
 from contextlib import asynccontextmanager
 
 import torch
-from fastapi import Depends, FastAPI, File, Header, HTTPException, Query, UploadFile
+from fastapi import Depends, FastAPI, File, Header, HTTPException, Query, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from PIL import Image, UnidentifiedImageError
@@ -41,6 +41,14 @@ from backend.auth import (  # noqa: E402
     require_reviewer,
     spend_password_verification_time,
     verify_password,
+)
+from backend.rate_limit import (  # noqa: E402
+    LOGIN_MAX_ATTEMPTS,
+    LOGIN_WINDOW_SECONDS,
+    REGISTER_MAX_ATTEMPTS,
+    REGISTER_WINDOW_SECONDS,
+    clear_attempts,
+    enforce,
 )
 from backend.db.model_version import get_or_create_model_version  # noqa: E402
 from backend.db.seed_metrics import seed_evaluation_metrics  # noqa: E402
@@ -177,7 +185,8 @@ def _user_response(user: User) -> UserResponse:
 
 
 @app.post("/api/auth/register", response_model=TokenResponse)
-def register(body: RegisterRequest, db: Session = Depends(get_db)):
+def register(request: Request, body: RegisterRequest, db: Session = Depends(get_db)):
+    enforce(request, "register", REGISTER_MAX_ATTEMPTS, REGISTER_WINDOW_SECONDS)
     # Length/format bounds (name, email, password 8..72) are enforced by
     # RegisterRequest -- see backend/schemas.py for why they belong there.
     if db.query(User).filter_by(email=body.email).first():
@@ -192,7 +201,11 @@ def register(body: RegisterRequest, db: Session = Depends(get_db)):
 
 
 @app.post("/api/auth/login", response_model=TokenResponse)
-def login(body: LoginRequest, db: Session = Depends(get_db)):
+def login(request: Request, body: LoginRequest, db: Session = Depends(get_db)):
+    # Counted before the attempt; cleared on success, so only failures
+    # accumulate and a legitimate user signing in is never penalised.
+    enforce(request, "login", LOGIN_MAX_ATTEMPTS, LOGIN_WINDOW_SECONDS)
+
     user = db.query(User).filter_by(email=body.email).first()
     if user is None:
         # Spend the same bcrypt time we would have on a real account before
@@ -204,6 +217,7 @@ def login(body: LoginRequest, db: Session = Depends(get_db)):
     if not verify_password(body.password, user.password_hash):
         raise HTTPException(status_code=401, detail="Incorrect email or password.")
 
+    clear_attempts(request, "login")
     return TokenResponse(access_token=create_access_token(user.id), user=_user_response(user))
 
 

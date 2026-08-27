@@ -1,4 +1,5 @@
 import { motion, useReducedMotion } from "framer-motion";
+import { canAnimate } from "../../lib/motion";
 import type { EvaluationMetric } from "../../api/types";
 import { formatDateTime } from "../../lib/format";
 import { AnimatedNumber } from "../ui/AnimatedNumber";
@@ -15,7 +16,7 @@ export function MetricsSection({ metric }: { metric: EvaluationMetric }) {
 
   return (
     <motion.section
-      initial={reduceMotion ? false : { opacity: 0, y: 12 }}
+      initial={canAnimate(reduceMotion) ? { opacity: 0, y: 12 } : false}
       whileInView={{ opacity: 1, y: 0 }}
       viewport={{ once: true, margin: "-60px" }}
       transition={{ duration: 0.35, ease: "easeOut" }}

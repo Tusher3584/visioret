@@ -1,7 +1,10 @@
 import { motion, useReducedMotion } from "framer-motion";
 import { BrowserRouter, Route, Routes, useLocation } from "react-router-dom";
 import { Header } from "./components/layout/Header";
+import { ErrorBoundary } from "./components/states/ErrorBoundary";
+import { canAnimate } from "./lib/motion";
 import { AdminPage } from "./pages/AdminPage";
+import { NotFoundPage } from "./pages/NotFoundPage";
 import { AuthProvider } from "./context/AuthContext";
 import { ThemeProvider } from "./context/ThemeContext";
 import { HistoryPage } from "./pages/HistoryPage";
@@ -24,19 +27,37 @@ function AnimatedRoutes() {
   return (
       <motion.div
         key={location.pathname}
-        initial={reduceMotion ? false : { opacity: 0, y: 6 }}
+        // canAnimate, not just reduceMotion. This wrapper starts at
+        // opacity: 0 -- i.e. the entire page invisible -- and only becomes
+        // visible when the animation runs. Browsers pause
+        // requestAnimationFrame in hidden tabs, so a page opened in a
+        // background tab (ctrl-click, or a session restore with several
+        // tabs) mounts invisible and stays that way until rAF resumes.
+        // Verified: with document.visibilityState === "hidden", this div's
+        // computed opacity sits at 0 indefinitely.
+        //
+        // Skipping the animation there costs nothing -- nobody is watching a
+        // hidden tab -- and removes the possibility of content existing but
+        // not being visible.
+        initial={canAnimate(reduceMotion) ? { opacity: 0, y: 6 } : false}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.18, ease: "easeOut" }}
       >
-        <Routes location={location}>
-          <Route path="/" element={<PredictPage />} />
-          <Route path="/history" element={<HistoryPage />} />
-          <Route path="/scans/:scanId" element={<ScanDetailPage />} />
-          <Route path="/metrics" element={<MetricsPage />} />
-          <Route path="/login" element={<LoginPage />} />
-          <Route path="/profile" element={<ProfilePage />} />
-          <Route path="/admin" element={<AdminPage />} />
-        </Routes>
+        {/* Keyed on pathname so a crashed page recovers when you navigate
+            away, instead of the boundary latching on the error forever. */}
+        <ErrorBoundary key={location.pathname}>
+          <Routes location={location}>
+            <Route path="/" element={<PredictPage />} />
+            <Route path="/history" element={<HistoryPage />} />
+            <Route path="/scans/:scanId" element={<ScanDetailPage />} />
+            <Route path="/metrics" element={<MetricsPage />} />
+            <Route path="/login" element={<LoginPage />} />
+            <Route path="/profile" element={<ProfilePage />} />
+            <Route path="/admin" element={<AdminPage />} />
+            {/* Catch-all: an unmatched path used to render an empty <main>. */}
+            <Route path="*" element={<NotFoundPage />} />
+          </Routes>
+        </ErrorBoundary>
       </motion.div>
   );
 }

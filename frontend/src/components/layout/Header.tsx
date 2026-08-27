@@ -54,7 +54,11 @@ export function Header() {
             ) : (
               <NavLink
                 to="/login"
-                className="whitespace-nowrap text-xs font-medium text-accent hover:underline"
+                // inline-flex + min-h-6 gives this a 24px-tall hit area.
+                // Measured at 320px it was 16px tall, below the 24x24 minimum
+                // WCAG 2.2 asks for (2.5.8 Target Size) -- a thin strip to hit
+                // on a phone. The text size is unchanged; only the target grew.
+                className="inline-flex min-h-6 items-center whitespace-nowrap text-xs font-medium text-accent hover:underline"
               >
                 Sign in
               </NavLink>

@@ -96,7 +96,8 @@ export function LoginPage() {
               setMode(mode === "login" ? "register" : "login");
               setError(null);
             }}
-            className="text-xs font-medium text-accent hover:underline"
+            // min-h-6 for a 24px hit area (WCAG 2.2 2.5.8); it measured 16px.
+            className="inline-flex min-h-6 items-center justify-center text-xs font-medium text-accent hover:underline"
           >
             {mode === "login" ? "Need an account? Register" : "Already registered? Sign in"}
           </button>

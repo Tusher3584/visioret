@@ -58,12 +58,55 @@ function scanHeaders(): Record<string, string> {
   return headers;
 }
 
+/** One entry of FastAPI's 422 validation-error body. */
+interface ValidationErrorItem {
+  loc?: unknown[];
+  msg?: string;
+}
+
+/**
+ * FastAPI reports errors in two different shapes, and assuming the first one
+ * put "[object Object]" in front of users.
+ *
+ *   HTTPException  -> { detail: "Some message" }          (a string)
+ *   422 validation -> { detail: [{ loc, msg, type }, ...] } (an array)
+ *
+ * The array shape appears whenever a request fails Pydantic/Query validation:
+ * a name over its length limit, a password over bcrypt's 72-byte ceiling, a
+ * malformed email, `?limit=-1`. Those used to surface as 500s with a string
+ * body, so the array case never came up until the backend started validating
+ * input properly.
+ *
+ * `loc` is a path like ["body", "password"]; dropping the leading "body"
+ * leaves the field name, which is the part a user can act on.
+ */
+function extractErrorDetail(body: unknown, fallback: string): string {
+  const detail = (body as { detail?: unknown } | null)?.detail;
+
+  if (typeof detail === "string" && detail) return detail;
+
+  if (Array.isArray(detail)) {
+    const messages = (detail as ValidationErrorItem[])
+      .map((item) => {
+        const msg = typeof item?.msg === "string" ? item.msg : "";
+        if (!msg) return "";
+        const field = Array.isArray(item.loc)
+          ? item.loc.filter((part) => part !== "body" && part !== "query").join(".")
+          : "";
+        return field ? `${field}: ${msg}` : msg;
+      })
+      .filter(Boolean);
+    if (messages.length) return messages.join("; ");
+  }
+
+  return fallback;
+}
+
 async function handleResponse<T>(response: Response): Promise<T> {
   if (!response.ok) {
     let detail = response.statusText;
     try {
-      const body = await response.json();
-      detail = body.detail ?? detail;
+      detail = extractErrorDetail(await response.json(), detail);
     } catch {
       // response body wasn't JSON -- fall back to statusText
     }

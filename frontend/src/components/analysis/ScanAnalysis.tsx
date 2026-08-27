@@ -1,4 +1,5 @@
 import { motion, useReducedMotion } from "framer-motion";
+import { canAnimate } from "../../lib/motion";
 import type { Feedback } from "../../api/types";
 import { ExplanationPanel } from "./ExplanationPanel";
 import { PredictionSummary } from "./PredictionSummary";
@@ -44,7 +45,7 @@ export function ScanAnalysis({
 
   return (
     <motion.div
-      initial={reduceMotion ? false : { opacity: 0, y: 10 }}
+      initial={canAnimate(reduceMotion) ? { opacity: 0, y: 10 } : false}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.3, ease: "easeOut" }}
       className="grid grid-cols-1 items-start gap-4 xl:grid-cols-[minmax(0,1fr)_380px]"

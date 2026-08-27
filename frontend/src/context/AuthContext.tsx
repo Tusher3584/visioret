@@ -1,5 +1,13 @@
 import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
-import { clearToken, fetchMe, login as apiLogin, register as apiRegister, setToken } from "../api/client";
+import {
+  ApiError,
+  clearToken,
+  fetchMe,
+  getToken,
+  login as apiLogin,
+  register as apiRegister,
+  setToken,
+} from "../api/client";
 import type { User } from "../api/types";
 
 interface AuthContextValue {
@@ -25,9 +33,25 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
+    // No token means definitively signed out -- skip the request rather than
+    // firing a guaranteed 401 on every page load for anonymous visitors
+    // (which is most of them: analysis works without an account).
+    if (!getToken()) {
+      setIsLoading(false);
+      return;
+    }
+
     fetchMe()
       .then(setUser)
-      .catch(() => setUser(null))
+      .catch((err) => {
+        setUser(null);
+        // 401 means the token is genuinely bad (expired, or signed with a
+        // rotated secret) -- drop it so the app stops retrying it. Anything
+        // else is transient: the backend restarting, a network blip. Keeping
+        // the token there means a reload signs the user back in instead of
+        // silently logging them out over a hiccup.
+        if (err instanceof ApiError && err.status === 401) clearToken();
+      })
       .finally(() => setIsLoading(false));
   }, []);
 

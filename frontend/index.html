@@ -17,27 +17,11 @@
       rel="stylesheet"
     />
     <title>Visioret</title>
-    <script>
-      // Resolve and apply the theme before first paint, otherwise the page
-      // renders in the default palette for a frame and visibly snaps to the
-      // stored one. Kept inline and dependency-free so it runs synchronously
-      // ahead of the stylesheet and the bundle.
-      (function () {
-        try {
-          var stored = localStorage.getItem("visioret_theme");
-          var theme =
-            stored === "light" || stored === "dark"
-              ? stored
-              : window.matchMedia("(prefers-color-scheme: dark)").matches
-                ? "dark"
-                : "light";
-          document.documentElement.setAttribute("data-theme", theme);
-        } catch (e) {
-          // Private mode / storage disabled -- fall back to the OS preference.
-          document.documentElement.setAttribute("data-theme", "light");
-        }
-      })();
-    </script>
+    <!-- Applies the stored/system theme before first paint. External rather
+         than inline so it satisfies the CSP's `script-src 'self'` -- see the
+         comment in public/theme-init.js. Must stay synchronous (no defer, no
+         type="module") or it runs after paint and the flash returns. -->
+    <script src="/theme-init.js"></script>
   </head>
   <body>
     <div id="root"></div>

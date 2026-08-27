@@ -336,10 +336,13 @@ real (`--dry-run`, `--all`, `--older-than-hours`).
 
 ### A design principle enforced across the codebase
 **An animation may decorate a transition, but must never decide whether
-content exists, what it says, or whether navigation occurred.** Six separate
+content exists, what it says, or whether navigation occurred.** Seven separate
 bugs of this class were found and fixed (metrics readouts freezing at 0.0%,
 empty probability bars, a stranded theme icon, an invisible-but-focusable
-menu, a stale review panel, and route changes that silently didn't render).
+menu, a stale review panel, route changes that silently didn't render, and —
+found in the pre-defense review — the route wrapper leaving every page at
+`opacity: 0` in a background tab). The guard `lib/motion.ts:canAnimate()` is
+now used by every entrance animation rather than by one of five.
 
 ---
 
@@ -454,8 +457,13 @@ Stated explicitly so nobody assumes otherwise:
 - **Anonymous purge is manual**, not scheduled.
 - **No automated test suite** — verification to date has been manual and
   script-driven, not `pytest`/CI.
-- **No rate limiting** on the API — login in particular is unthrottled, so
-  password guessing is bounded only by bcrypt's cost.
+- **Rate limiting covers only authentication** (10 failed logins / 5 min,
+  5 registrations / hour, per client address, in-process). `/api/predict` and
+  the read endpoints are unthrottled, and the limiter is process-local so it
+  would need shared storage behind more than one worker.
+- **API docs (`/docs`, `/redoc`, `/openapi.json`) are public.** Intentional
+  for a research demo; every endpoint behind them is still authorization-
+  checked.
 - **Scan images are served without authentication.** `/media/...` is public to
   anyone holding the URL; filenames are `uuid4` so they cannot be guessed, but
   a shared link grants indefinite access. Deliberate (plain `<img>` tags

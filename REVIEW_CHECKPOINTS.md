@@ -33,18 +33,18 @@ Every endpoint: request validation, error handling, status codes, response
 shapes, DB session handling, migration chain integrity, and whether the ORM
 models match the migrations and the live schema.
 
-## R4 — Frontend ⬜
+## R4 — Frontend ✅
 
 Build integrity, routes, component structure, state management, API
 integration, loading/error/empty states, and dead code.
 
-## R5 — Security & privacy ⬜
+## R5 — Security & privacy ✅
 
 Full authorization matrix re-verified end to end, secret handling, CORS,
 password storage, JWT handling, input validation, file-upload safety, and
 data exposure (including the anonymous-session boundary).
 
-## R6 — Accessibility & responsive ⬜
+## R6 — Accessibility & responsive ✅
 
 Heading structure, keyboard operation, focus management, contrast in both
 themes, reduced motion, and layout from 320px to wide desktop.
@@ -70,6 +70,384 @@ lives.
 ---
 
 # Findings
+
+## R6 — Accessibility & responsive
+
+Scope covered: heading structure, landmarks, keyboard operation, focus
+management, contrast in both themes, reduced motion, touch targets, and
+layout from 320px upward. Measured in the browser.
+
+### 🟠 R6-1 — The animation-gating guard was used in 1 of 5 places
+
+`frontend/src/lib/motion.ts` exists specifically for one hazard: browsers
+pause `requestAnimationFrame` in hidden tabs, so any animation starting from
+a "zero" state can leave content showing something wrong. Its own docstring
+says components animating *from* an empty state must skip the animation when
+`canAnimate()` returns false.
+
+It was called in exactly **one** component (`ProbabilityDistribution`). Four
+others checked only `useReducedMotion` — including **`App.tsx`'s route
+wrapper, which starts at `opacity: 0` and therefore gates every page's entire
+content**.
+
+Measured, not theorised — with `document.visibilityState === "hidden"`:
+
+```
+#main > div   inline style: "opacity: 0; transform: translateY(6px);"
+              computed opacity: 0     (indefinitely)
+```
+
+A page opened in a background tab (ctrl-click, or a session restore with
+several tabs) mounts with its content present in the DOM and invisible on
+screen. `reduceMotion` alone is the trap: it looks like it covers the "don't
+animate" case and covers only half of it.
+
+**Fixed** — `App.tsx`, `ScanAnalysis`, `MetricsSection` and `UserMenu` now all
+route through `canAnimate()`. The guidance in `motion.ts` was extended to say
+that `opacity: 0` is the same hazard wearing a different hat.
+
+### 🟡 R6-2 — Two touch targets below the WCAG 2.2 minimum
+
+At 320px, measured heights:
+
+| Target | Before | After |
+|---|---|---|
+| Header "Sign in" link | **16px** | 24px |
+| Login page "Need an account? Register" | **16px** | 24px |
+
+WCAG 2.2 AA (2.5.8 Target Size) asks for 24×24. Both were bare text links
+with no vertical padding — a thin strip to hit on a phone. Fixed with
+`inline-flex min-h-6 items-center`, which grows the hit area without changing
+the type size. Re-verified at 320px: **zero targets below the minimum**.
+
+### ✅ Verified correct
+
+- **No horizontal overflow at 320px on any route** — `/`, `/history`,
+  `/login`, `/profile`, `/metrics`, `/404`. `scrollWidth` equals the viewport
+  and no element exceeds it.
+- **Contrast passes in both themes**, on clean page loads, across all six
+  routes — zero failures against 4.5:1 (3:1 for large text), computed from
+  composited backgrounds rather than eyeballed.
+- **Heading structure**: exactly one `<h1>` per route, no skipped levels
+  anywhere.
+- **Landmarks**: one `<main>`, one `<nav>`, one `<header>` per page, plus a
+  working "Skip to content" link.
+- **Zero clickable `<div>`s**, zero images without `alt`, zero buttons or
+  links without an accessible name, across every route.
+- **Focus indicator** is defined globally in `index.css`:
+  `:where(a, button, input, select, textarea, [tabindex]):focus-visible {
+  outline: 2px solid var(--vr-accent); outline-offset: 2px }` — one rule
+  covering every interactive element rather than per-component utilities.
+- **Reduced motion** handled globally: decorative animations disabled and all
+  transitions collapsed to 0.01ms under `prefers-reduced-motion: reduce`.
+- The hidden file input is correctly `aria-hidden="true"` + `tabIndex={-1}` +
+  `sr-only`, driven by a visible "Browse files" button — the right pattern,
+  not an unlabelled control.
+
+### Three false alarms, and what caused them
+
+Recorded because the measurement mistakes are more instructive than the
+findings:
+
+1. **"Contrast fails in ~6 places per route."** My first contrast script
+   parsed colours with a regex, which cannot read Tailwind v4's `oklab()`
+   backgrounds — it read `oklab(0.999994 …)` (white) as near-black and
+   reported the site logo at 1.13:1. Rewritten to resolve colours through a
+   canvas, which handles any CSS colour syntax; the failures disappeared.
+2. **"The 'Online' label fails at 2.56–2.81:1."** An artifact of driving
+   navigation with `pushState` in a loop: `ThemeContext` re-applied its own
+   `data-theme` on re-render, so measurements ran against a mixed state
+   (light-theme text colour on a dark background). On clean page loads the
+   same element measures **7.6:1**.
+3. **"The theme toggle does nothing."** `button.click()` did not flip it, and
+   I reported that before finishing the diagnosis. A properly constructed
+   `MouseEvent` with `view: window` toggles it correctly — light → dark,
+   persisted, `aria-label` updated. **The toggle is not broken.**
+
+### Not verified
+
+Keyboard `Tab` traversal could not be exercised: key events do not reach the
+page while the browser pane is not displayed, and programmatic `.focus()`
+does not trigger `:focus-visible`. The global focus rule is confirmed present
+in the stylesheet and every interactive element is confirmed focusable, but
+the ring was not observed rendering under real keyboard navigation. Worth one
+manual pass before the defense.
+
+### R6 verdict
+
+Structure, contrast, landmarks and responsive behaviour are in good shape and
+were already solid before this pass. The one substantive finding is R6-1 —
+not a styling issue but the same animation-gating class that has now produced
+seven separate defects in this project, which is the argument for the guard
+being mandatory rather than optional.
+
+---
+
+## R5 — Security & privacy
+
+Scope covered: the authorization matrix end to end, the anonymous-session
+boundary, JWT handling, secret handling, CORS, password storage, injection,
+XSS, file-upload safety, rate limiting, and security headers. Everything
+below was **executed against the running stack**, not reasoned about.
+
+### 🟠 R5-1 — No security headers on any response
+
+`curl -I` on both the frontend and the API returned none of
+`X-Frame-Options`, `Content-Security-Policy`, `X-Content-Type-Options`,
+`Referrer-Policy` or `Permissions-Policy`. The `Referrer-Policy` gap
+compounds R3-6: `/media/scans/<uuid>.jpg` *is* the capability for that image,
+so leaking it in a `Referer` header to any third-party link is a real
+disclosure.
+
+**Fixed** in `frontend/nginx.conf`: `X-Frame-Options: DENY` (this app has
+reviewer action controls — framing it is a clickjacking route to them),
+`nosniff`, `strict-origin-when-cross-origin`, a `Permissions-Policy` denying
+camera/mic/geolocation, and a CSP with `script-src 'self'` and
+`frame-ancestors 'none'`. `server_tokens off` also drops the nginx version
+banner.
+
+Two mistakes made and corrected while writing it, both worth recording:
+
+1. **The headers were declared once at server level and applied to nothing.**
+   nginx's `add_header` does not merge across levels — a `location` block
+   containing *any* `add_header` discards every inherited one. Both locations
+   here set `Cache-Control`, so the security headers would have silently
+   vanished from every response the site actually serves. They are now
+   repeated in each block, with the rule written down above them.
+2. **The CSP broke the app, and my own comment asserted it wouldn't.** The
+   comment claimed "no inline scripts are used"; `index.html` had an inline
+   theme-bootstrap script, and the Google Fonts stylesheet was blocked too.
+   Verified in the browser:
+   `Executing inline script violates ... script-src 'self'` and
+   `Loading the stylesheet 'https://fonts.googleapis.com/...' violates ...`.
+   Rather than weaken `script-src` to `'unsafe-inline'`, the script moved to
+   `public/theme-init.js` (external, same-origin, still synchronous so the
+   no-flash behaviour is preserved); `fonts.googleapis.com` and
+   `fonts.gstatic.com` were added to `style-src`/`font-src`. Re-verified:
+   **zero CSP violations**, `data-theme="dark"` applied, Inter and IBM Plex
+   Mono both loaded.
+
+### 🟠 R5-2 — Authentication was completely unthrottled
+
+Measured: **20 failed logins in 4.1 seconds, all 401, no back-off**. bcrypt's
+~200ms cost is the only brake, which still permits thousands of guesses per
+hour against a known address and does nothing about cheap address
+enumeration.
+
+**Fixed** with `backend/rate_limit.py` — a fixed-window limiter, no new
+dependency: 10 failed logins per 5 minutes, 5 registrations per hour, per
+client address. Successful logins **clear** the counter, so only failures
+accumulate and somebody signing in and out repeatedly is never locked out.
+The module states its own limits honestly: process-local state is correct for
+a single-instance deployment and would need shared storage behind multiple
+workers; a fixed window can allow up to 2x the limit across a boundary, which
+at these numbers is still far below what makes online guessing viable.
+
+Verified: `401 ×10 → 429 ×4`, `retry-after: 280`, and 3 failures → success →
+9 further failures all 401, proving the reset works.
+
+### 🟡 R5-3 — API docs are publicly reachable
+
+`/docs`, `/redoc` and `/openapi.json` all return 200 to anonymous callers,
+exposing the full endpoint surface and schemas.
+
+**Left as-is, deliberately.** For a research demo this is a feature — the
+README points examiners at it, and every endpoint behind it is authorization-
+checked independently. Noted here so it is a decision rather than an
+oversight; a deployment with real patient data should gate or disable it.
+
+### ✅ Verified correct — nothing found
+
+- **JWT handling.** Every forgery attempt rejected with 401: tampered
+  signature, `alg=none`, HS256 signed with a guessed key, expired-but-validly-
+  signed, a token for a nonexistent user id, and garbage. Only the genuine
+  token returned 200.
+- **Anonymous session isolation** — the privacy boundary added earlier this
+  project, now proven rather than asserted. Two sessions each submitted a
+  scan:
+
+  | Caller | Sees |
+  |---|---|
+  | session A | `[52]` — its own only |
+  | session B | `[53]` — its own only |
+  | no session header | `[]` — nothing |
+  | signed-in viewer | `[39]` — own scans only |
+  | viewer **+ A's session header** | `[39]` — the header does not widen access |
+  | reviewer | all 20 — by design |
+
+  Direct IDOR also blocked: A requesting B's scan by id → **404**, its own →
+  200, no header → 404.
+- **Privilege escalation is impossible through the API.** Admin granting
+  admin → 400. Admin demoting another admin → 400. Admin changing own role →
+  400. Viewer `PATCH /api/auth/me {"role":"admin"}` → 400, role unchanged.
+- **SQL injection** via `X-Anon-Session` (`' OR '1'='1`, `'; DROP TABLE
+  scans;--`, LIKE-wildcard abuse) and via the login email: all returned
+  0 scans / 401, and the `scans` table still holds its 20 rows. SQLAlchemy
+  parameterises throughout.
+- **XSS proven inert by execution, not by trusting React.** Stored
+  `<img src=x onerror=alert(1)><script>alert(2)</script>` as a feedback
+  comment, then rendered the page and counted: **0 injected `<img>` tags, 0
+  injected `<script>` tags**, payload present as literal text. No
+  `dangerouslySetInnerHTML`, `innerHTML`, `eval` or `new Function` anywhere
+  in `frontend/src`.
+- **CORS** allows only `http://localhost:5173`; `evil.example.com` and `null`
+  receive no `Access-Control-Allow-Origin` at all.
+- **Password storage**: every row is a 60-char `$2b$12$` bcrypt hash. No
+  plaintext, and no endpoint echoes a hash — `/api/auth/me` returns only id,
+  name, email, role.
+- **Over-long session ids** (500 chars) are truncated to the column width and
+  handled, not 500'd.
+- **No secrets in the built frontend bundle** — searched for the JWT secret,
+  database credentials, and the strings `secret`/`postgres`: zero hits.
+- **`/.env`, `/.git/config`, `/nginx.conf` are not exposed.** These return
+  200, which looks alarming until you read the body: it is `index.html` via
+  the SPA fallback, and none of those files exist in the frontend image at
+  all (it contains only `index.html`, `favicon.svg`, `theme-init.js`,
+  `50x.html` and `assets/`). Checked rather than reported.
+- Static-file path traversal blocked (re-confirmed from R3).
+
+### R5 verdict
+
+No exploitable vulnerability found. The parts that matter most for a medical
+demo — authorization, the anonymous privacy boundary, JWT integrity, and
+injection resistance — are all correct under direct attack. The two real gaps
+were *missing defences* rather than broken ones (no headers, no throttling),
+and both are now in place and verified.
+
+---
+
+## R4 — Frontend
+
+Scope covered: build integrity, routes, component structure, state
+management, API integration, loading/error/empty states, dead code. Findings
+were reproduced **in the running app** via the browser, not read off the
+source.
+
+### 🔴 R4-1 — Every validation error rendered as `[object Object]` *(regression from R3)*
+
+Caused by the R3 fixes in this same review. FastAPI returns two different
+error bodies:
+
+```
+HTTPException   -> { detail: "Some message" }              (string)
+422 validation  -> { detail: [{loc, msg, type}, ...] }     (array)
+```
+
+`handleResponse` did `detail = body.detail ?? detail` and passed the result
+straight to `new ApiError(...)`. Before R3 those inputs produced 500s with a
+string body, so the array shape never arose. After R3 they are 422s — and
+every one of them reached the user as literally `[object Object]`. Confirmed
+in the browser, not inferred:
+
+> Password
+> At least 8 characters.
+> **[object Object]**
+
+**Fixed** with `extractErrorDetail()`, which handles both shapes and turns
+`loc: ["body","password"]` into a field name. Same probe now reads:
+
+> **password: String should have at most 72 characters**
+
+This is the cost of changing an API contract without checking the consumer.
+The backend fix was correct in isolation and made the product worse.
+
+### 🟠 R4-2 — `index.html` was served with no `Cache-Control`
+
+Found while trying to verify R4-1 and getting stale results. `nginx.conf`
+sent only `ETag`/`Last-Modified` for `index.html`, so browsers applied
+**heuristic caching** (roughly 10% of the document's age) and could serve it
+without revalidating. Observed directly: the container was serving
+`index-CYwRzeL-.js` while the browser kept running `index-C0D7cNFv.js`.
+
+This is a deployment bug, not a test annoyance. Vite emits content-hashed
+bundle names, so a stale `index.html` points at a filename that **no longer
+exists** after the next deploy — the failure mode is not "slightly old code",
+it is a blank page with `Failed to load module script`.
+
+**Fixed**: `index.html` → `Cache-Control: no-cache` (store, but always
+revalidate — the ETag makes that a cheap 304); `/assets/*` → `public,
+max-age=31536000, immutable`, which is safe precisely because those names are
+content-hashed. Verified both headers on the live server.
+
+### 🟠 R4-3 — Unknown routes rendered a blank page
+
+No catch-all `<Route>`. `/this-route-does-not-exist` rendered the header and
+an empty `<main>` — measured `innerText.length === 0`. A mistyped URL or a
+stale bookmark produced a blank screen with no message and no way onward.
+**Fixed** with `NotFoundPage`.
+
+### 🟠 R4-4 — No error boundary anywhere
+
+React unmounts the whole tree when a render throws, so any single component
+error blanked the entire application — header, nav and all. That is the worst
+possible failure during a live demonstration: no message, no route, no way
+back except knowing to reload. **Fixed** with `ErrorBoundary`, keyed on
+pathname so navigating away clears a latched error, offering both "Try again"
+and "Reload".
+
+### 🟠 R4-5 — The metrics page asserted something untrue
+
+The footnote under the results read:
+
+> "Test splits are patient-disjoint: no patient contributing to a training set
+> appears in the corresponding test set."
+
+R2 measured that this is **not true** of the Kermany split. Leaving it would
+have meant asserting a disproved claim in the place a reader trusts most —
+directly beneath the numbers. **Rewritten** to state the grouping caveat, the
+41% figure, and the measured 0.9750-vs-0.9180 comparison showing the numbers
+understate rather than overstate.
+
+### 🟡 R4-6 — Authorization outcomes were rendered as errors
+
+An anonymous visitor opening `/metrics` saw **"Error. Not authenticated."** —
+a correct authorization decision presented as a fault, on the page an
+examiner is most likely to open first. **Fixed**: 401 and 403 are now
+distinguished from real failures and rendered as explanatory empty states
+("Sign in to view evaluation results" / "Reviewer access required", the
+latter explaining *why* the role gates it).
+
+### 🟡 R4-7 — `fetchMe()` fired on every load, and a blip signed you out
+
+`AuthProvider` called `fetchMe()` unconditionally, so every anonymous visit
+made a guaranteed-401 request — and *any* failure, including a transient one
+while the backend restarts, cleared the user while leaving the token in
+localStorage, so the app showed signed-out until a manual reload.
+
+**Fixed**: skip the call entirely when there is no token, and only clear the
+token on a genuine 401. Verified — an anonymous page load now issues **zero**
+`/api/auth/me` requests (backend request count unchanged across a reload).
+
+### ✅ Verified correct
+
+- **`tsc -b` passes clean.** `oxlint` reports only two `only-export-components`
+  fast-refresh warnings in the context files — dev ergonomics, not defects.
+- **No dead code.** Swept every module for unreferenced files and every
+  exported symbol for unused exports; the six flagged candidates
+  (`getToken`, `Identicon`, the four request interfaces) are all used
+  internally.
+- **`api/types.ts` matches `backend/schemas.py` exactly** — every response
+  model, field name and nullability lines up.
+- The `AnimatedRoutes` comment documenting why `AnimatePresence mode="wait"`
+  was rejected is accurate and worth keeping: it is the fix for the
+  navigation-gating bug class.
+- `AdminPage` is a good model for the rest — loading, error, empty and busy
+  states all handled, non-admins redirected, accessible table with `scope`
+  and a `<caption>`.
+- History empty state renders honest copy about session-scoped anonymous
+  history.
+- Reviewer view of `/metrics` renders both splits correctly, with the
+  hash-keyed model label `resnet50_oct_91dfa561392c432c` and a
+  row-normalised confusion matrix.
+
+### R4 verdict
+
+The component structure, typing and state handling are in good shape, and
+there is no dead code — but the review found **one regression it had caused
+itself**, plus a caching misconfiguration that would have shipped stale or
+broken bundles to returning users. Both were only visible by running the app.
+
+---
 
 ## R3 — Backend API
 

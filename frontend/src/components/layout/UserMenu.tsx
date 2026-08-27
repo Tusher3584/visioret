@@ -1,4 +1,5 @@
 import { motion, useReducedMotion } from "framer-motion";
+import { canAnimate } from "../../lib/motion";
 import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import type { User } from "../../api/types";
@@ -100,7 +101,7 @@ export function UserMenu({ user, onSignOut }: Props) {
             ref={menuRef}
             role="menu"
             aria-label="Account"
-            initial={reduceMotion ? false : { opacity: 0, y: -4, scale: 0.97 }}
+            initial={canAnimate(reduceMotion) ? { opacity: 0, y: -4, scale: 0.97 } : false}
             animate={{ opacity: 1, y: 0, scale: 1 }}
             transition={{ duration: 0.14, ease: "easeOut" }}
             className="absolute right-0 top-[calc(100%+8px)] z-50 w-60 origin-top-right overflow-hidden rounded-[3px] border border-line bg-surface shadow-lg"
