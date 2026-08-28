@@ -338,7 +338,7 @@ visioret/
         upload/                            # UploadWorkspace
         ui/ states/                         # Button, AnimatedNumber, loading/error/empty states
       pages/                          # Predict, History, ScanDetail, Metrics, Login,
-                                      #   Profile, Admin  (7 routes)
+                                      #   Profile, Admin, NotFound (7 + catch-all)
       index.css                        # Tailwind v4 @theme semantic design tokens
     Dockerfile                      # multi-stage: node build -> nginx serve
     nginx.conf                      # SPA fallback routing fix

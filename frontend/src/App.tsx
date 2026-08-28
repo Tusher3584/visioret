@@ -1,5 +1,6 @@
 import { motion, useReducedMotion } from "framer-motion";
 import { BrowserRouter, Route, Routes, useLocation } from "react-router-dom";
+import { Footer } from "./components/layout/Footer";
 import { Header } from "./components/layout/Header";
 import { ErrorBoundary } from "./components/states/ErrorBoundary";
 import { canAnimate } from "./lib/motion";
@@ -67,7 +68,9 @@ export default function App() {
     <ThemeProvider>
       <AuthProvider>
         <BrowserRouter>
-        <div className="min-h-screen bg-canvas text-ink">
+        {/* flex column + mt-auto on the footer keeps it at the bottom of the
+            viewport on short pages, without position: fixed covering content. */}
+        <div className="flex min-h-screen flex-col bg-canvas text-ink">
           <a
             href="#main"
             className="sr-only focus:not-sr-only focus:absolute focus:left-3 focus:top-3 focus:z-50 focus:rounded-[3px] focus:bg-accent focus:px-3 focus:py-2 focus:text-sm focus:text-accent-ink"
@@ -75,9 +78,10 @@ export default function App() {
             Skip to content
           </a>
           <Header />
-          <main id="main" className="mx-auto max-w-[1600px] px-4 py-6 sm:px-6 sm:py-8">
+          <main id="main" className="mx-auto w-full max-w-[1600px] flex-1 px-4 py-6 sm:px-6 sm:py-8">
             <AnimatedRoutes />
           </main>
+          <Footer />
         </div>
         </BrowserRouter>
       </AuthProvider>

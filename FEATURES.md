@@ -289,9 +289,31 @@ real (`--dry-run`, `--all`, `--older-than-hours`).
 
 ---
 
+### Hardening
+
+Measures added after the pre-defense review probed the running system:
+
+| Control | Detail |
+|---|---|
+| Password hashing | bcrypt, cost 12; ≤72-byte guard so a long passphrase fails cleanly rather than 500-ing |
+| Login enumeration | identical message *and* identical timing for unknown email vs wrong password (a bcrypt verification is spent either way) |
+| Auth rate limiting | 10 failed logins / 5 min, 5 registrations / hour, per client; a successful login clears the counter |
+| Upload safety | 12 MB cap enforced before the body is read, `Image.MAX_IMAGE_PIXELS` set, decompression bombs → 400 |
+| Input validation | Pydantic length bounds mirroring every column width; `EmailStr` on registration |
+| Security headers | `Content-Security-Policy` (script-src `'self'`), `X-Frame-Options: DENY`, `nosniff`, `Referrer-Policy: strict-origin-when-cross-origin`, `Permissions-Policy` |
+| Cache policy | `index.html` `no-cache`; content-hashed assets `immutable` |
+| CORS | allow-list of two origins; everything else receives no `Access-Control-Allow-Origin` |
+
+Verified under direct attack: forged/tampered/`alg=none`/expired JWTs all
+rejected, SQL injection parameterised away, stored XSS rendered inert
+(0 injected tags), and no secrets present in the built frontend bundle.
+
+**Scan images remain the one deliberate exception** — see §12.
+
 ## 6. Frontend
 
-7 routes: `/` (Predict), `/history`, `/scans/:id`, `/metrics`, `/login`,
+7 routes plus a catch-all 404: `/` (Predict), `/history`, `/scans/:id`,
+`/metrics`, `/login`,
 `/profile`, `/admin`.
 
 ### Design system

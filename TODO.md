@@ -709,3 +709,17 @@ only for reviewers.
 ## Checkpoint 11 — Deployment ⚪ stretch, do last
 
 - [ ] Only attempt once everything above is solid locally
+
+**Status after the pre-defense review (see `REVIEW_CHECKPOINTS.md`, R8).**
+Local deployment readiness has now been *tested* rather than assumed: a fresh
+`git clone` followed by the README reaches a working system in ~66 seconds —
+all 7 migrations applied automatically, model and CLIP weights downloaded,
+and the published metrics seeded from a committed file so the metrics page
+works on a machine that has never seen the dataset.
+
+What remains for this checkpoint is genuine *hosting*, and R8 established the
+constraint that decides it: ~686 MB peak RAM and a ~3 GB backend image, which
+does not fit the common free PaaS tiers. A small paid VPS or an institutional
+machine is the realistic target; the frontend alone could sit on free static
+hosting. R8 also lists what must change first — TLS, non-hardcoded database
+credentials, and CORS/CSP origins that currently point at `localhost`.

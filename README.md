@@ -441,6 +441,7 @@ model/
   train_full.py                   # the real training script (resume + warm-start)
   evaluate.py                     # in-distribution evaluation
   evaluate_cross_dataset.py       # external-generalization evaluation
+  audit_patient_leakage.py        # quantifies the patient-grouping caveat
   ood_detector.py                 # OOD gate entry point (grayscale → CLIP)
   clip_ood.py                     # CLIP zero-shot OCT check
   explanations.py                 # clinical text + heatmap-geometry description
@@ -451,6 +452,7 @@ model/
     resnet50_oct.pth              # the trained model — tracked in git
     patient_split.json            # persisted patient-grouped split
     external_patient_split.json   # persisted split for the external datasets
+    evaluation_metrics.json       # committed metrics, seeds a fresh database
     evaluation_report.txt         # + confusion_matrix.png
     cross_dataset_evaluation_report.txt
 
@@ -459,21 +461,25 @@ backend/
   auth.py                         # bcrypt hashing, JWT, role dependencies
   schemas.py                      # Pydantic request/response models
   storage.py                      # scan image persistence
+  rate_limit.py                   # fixed-window limiter for the auth endpoints
   grant_role.py                   # role management CLI (only way to make an admin)
   purge_anonymous.py              # delete anonymous scans + their files
   db/models.py                    # SQLAlchemy models (7 tables)
+  db/seed_metrics.py              # loads the committed metrics into an empty DB
   alembic/versions/               # 7 migrations
   Dockerfile                      # CPU-only; model/ is volume-mounted, not baked in
 
 frontend/
+  public/theme-init.js            # applies the theme pre-paint (external, for CSP)
   src/api/                        # typed client; ApiError carries HTTP status
   src/components/                 # layout, analysis workspace, UI primitives
+  src/components/states/          # loading/error/empty + ErrorBoundary
   src/context/                    # auth + theme
   src/pages/                      # predict, history, scan detail, metrics,
-                                  #   login, profile, admin
+                                  #   login, profile, admin, 404
   src/lib/                        # identicon, anon session, motion helpers
   index.css                       # Tailwind v4 @theme semantic design tokens
-  nginx.conf                      # SPA fallback routing
+  nginx.conf                      # SPA fallback, cache policy, security headers
 
 data/                             # 400-image Kermany subset (ImageFolder layout)
 samples/                          # 4 images, one per class
@@ -495,8 +501,20 @@ that names them:
 - **Auth is deliberately minimal** — no email verification, password reset,
   OAuth, refresh tokens, or token revocation. A 7-day JWT cannot be invalidated
   before it expires.
-- **No rate limiting**, and no automated test suite; verification to date has
-  been manual and script-driven.
+- **Rate limiting covers authentication only** — 10 failed logins per 5
+  minutes and 5 registrations per hour, per client address. `/api/predict` and
+  the read endpoints are unthrottled. The limiter keeps state in-process, so it
+  would need shared storage behind more than one worker.
+- **No automated test suite.** Verification has been manual and
+  script-driven — see `REVIEW_CHECKPOINTS.md` for what was actually exercised
+  and how.
+- **Not sized for free hosting.** Peak memory is ~686 MB and the backend image
+  is ~3 GB (PyTorch plus CLIP), which exceeds the common free PaaS tiers. A
+  small paid VPS (2 GB RAM, 10 GB disk) or an institutional machine is the
+  realistic target; the frontend alone can sit on free static hosting.
+- **Not hardened for the public internet** — no TLS, database credentials and
+  allowed origins are hardcoded for local use, and both CORS and the CSP are
+  pinned to `localhost`. See R8 in `REVIEW_CHECKPOINTS.md` for the full list.
 - **Confidence values are raw softmax outputs** and are characteristically very
   high. No calibration analysis has been done.
 - **No PHI handling.** Scans are not linked to patient identities.
@@ -509,3 +527,4 @@ that names them:
 | [`TODO.md`](TODO.md) | The living checkpoint log — what was built, in order, and why |
 | [`REVIEW_CHECKPOINTS.md`](REVIEW_CHECKPOINTS.md) | Pre-defense review plan and findings |
 | [`PROJECT_CONTEXT.md`](PROJECT_CONTEXT.md) | Deep context: decisions, dead ends, and their reasoning |
+| [`DEFENSE_NOTES.md`](DEFENSE_NOTES.md) | Likely examiner questions, honest answers, and where each claim can be regenerated |

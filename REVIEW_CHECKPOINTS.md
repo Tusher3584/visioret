@@ -49,19 +49,19 @@ data exposure (including the anonymous-session boundary).
 Heading structure, keyboard operation, focus management, contrast in both
 themes, reduced motion, and layout from 320px to wide desktop.
 
-## R7 — End-to-end functional test ⬜
+## R7 — End-to-end functional test ✅
 
 Walk every real user flow against the running stack as each role
 (anonymous / viewer / reviewer / admin), including the failure paths:
 non-OCT rejection, bad credentials, permission denials, empty states.
 
-## R8 — Deployment readiness ⬜
+## R8 — Deployment readiness ✅
 
 What actually happens on a fresh machine: clean-clone startup, migrations,
 model/CLIP weight acquisition, environment variables, data persistence,
 resource needs, and an honest list of what is *not* production-ready.
 
-## R9 — Documentation & defense readiness ⬜
+## R9 — Documentation & defense readiness ✅
 
 README accuracy, stale docs, reproducibility instructions, and a short list
 of the questions a professor is most likely to ask with where the evidence
@@ -70,6 +70,366 @@ lives.
 ---
 
 # Findings
+
+## R9 — Documentation & defense readiness
+
+Scope: accuracy of every document against the current system, stale claims,
+reproducibility instructions, and a defense-preparation deliverable. Claims
+were checked against the code and the running system, not read for plausibility.
+
+### 🟠 R9-1 — The README claimed a limitation that no longer existed
+
+`README.md` still listed **"No rate limiting"** under Limitations. R5 added
+it; `FEATURES.md` was updated at the time and the README was not. A reader
+would have been told the system is weaker than it is — and an examiner who
+read it and then found `backend/rate_limit.py` would reasonably ask what else
+in the document is out of date.
+
+**Fixed**, and the Limitations section was brought fully current: it now
+states what rate limiting actually covers (auth only, in-process), that there
+is no automated test suite, the R8 hosting constraint (~686 MB / ~3 GB rules
+out free tiers), and that the system is not hardened for the public internet.
+
+### 🟠 R9-2 — The README file tree was missing seven files
+
+Everything added during R2–R8 was absent from "Project structure":
+`backend/rate_limit.py`, `backend/db/seed_metrics.py`,
+`model/audit_patient_leakage.py`, `model/checkpoints/evaluation_metrics.json`,
+`frontend/public/theme-init.js`, the `states/` directory (ErrorBoundary), and
+the 404 route. **Fixed**, with `nginx.conf` re-described to mention the cache
+policy and security headers it now carries.
+
+### 🟡 R9-3 — The security posture was documented nowhere
+
+Grep for `Content-Security-Policy`, `security header`, `seed_metrics`,
+`theme-init`, `413`, `email-validator` across all docs returned **nothing**.
+Roughly a checkpoint's worth of hardening existed only in code comments and
+in this review file.
+
+**Fixed** — `FEATURES.md` §5 gained a *Hardening* table covering password
+storage, login-enumeration timing, rate limits, upload safety, input
+validation, security headers, cache policy and CORS, plus what was verified
+under direct attack.
+
+### 🟡 R9-4 — Route count stale
+
+`FEATURES.md` and `PROJECT_CONTEXT.md` both said "7 routes"; there are now 8
+with the 404 catch-all added in R4. **Fixed** in both.
+
+### 📄 R9-5 — New deliverable: `DEFENSE_NOTES.md`
+
+The checkpoint called for "the questions a professor is most likely to ask
+with where the evidence lives". Written as
+[`DEFENSE_NOTES.md`](DEFENSE_NOTES.md) and linked from the README.
+
+It is organised so the harder questions are answered *before* they are asked
+— the patient-grouping caveat, the softmax overconfidence, the unauthenticated
+`/media` route — each with the measured number and the command that
+regenerates it. It also carries a "what went wrong" section, since that
+question tends to reveal more than any success does, and a pre-demo checklist
+(don't register on `.test` domains, check the hardcoded ports, start the stack
+early because first boot downloads weights, have a reviewer signed in for the
+metrics page, keep a non-OCT image handy).
+
+**Every factual claim in it was verified against the system**, not written
+from memory:
+
+| Claim | Source of truth | Confirmed |
+|---|---|---|
+| 22.1M / 23.5M trainable params | `train_full.log` | `22,071,300 / 23,516,228` |
+| 896 of 4,657 multi-class ids | `model/dataset.py` | ✅ |
+| 5,375 of 13,146 leaked images | `model/dataset.py` | ✅ |
+| 10 CLIP prompts | imported `PROMPTS` at runtime | `10` |
+| 0.9517 in-distribution | `evaluation_report.txt` | ✅ |
+| 0.88 / 2,712 images external | `cross_dataset_evaluation_report.txt` | ✅ |
+| `SEED = 42` | `model/train_full.py` | ✅ |
+| 10 logins / 5 registrations | `backend/rate_limit.py` | ✅ |
+| 12 MB upload cap | `backend/main.py` | ✅ |
+| 7 migrations, 12 endpoints | filesystem + `main.py` | ✅ |
+
+### ✅ Verified accurate
+
+- **All 12 endpoints** in the README table match the 12 `@app` routes.
+- **7 migrations, 7 tables** — both correct.
+- **Every published number matches its report**: 95.17% / 0.9517,
+  88.1% / 0.881268, and the 97.50% clean-subset figure agrees with
+  `audit_patient_leakage.py`.
+- **Every README command was actually executed** during this review — the
+  clone → `.env` → compose → health → `grant_role` path in R8, and the
+  alembic and evaluation commands in R1/R2.
+- **All five inter-document links resolve**, and all 14 anchor links are valid.
+- `UI_REDESIGN_BRIEF.md` remains correctly marked HISTORICAL (R1-7).
+- `TODO.md` updated so Checkpoint 11 records what R8 established rather than
+  sitting as an untouched stretch goal.
+
+### R9 verdict
+
+The documentation drifted in exactly the way documentation does: it was
+accurate when written in R1, and six checkpoints of fixes accumulated behind
+it. Nothing was *wrong* about the system's behaviour — the gaps were
+understatement (a limitation that had been fixed) and omission (files and
+hardening that existed but went unmentioned). All closed, with the defense
+deliverable added and independently fact-checked.
+
+---
+
+## R8 — Deployment readiness
+
+Tested by actually doing it: `git clone` of `HEAD` into a clean directory,
+then following the README from scratch on empty volumes, isolated under its
+own compose project so it could not touch the working stack. The only
+deviation from the documented path was a `!override` on the three published
+ports (5434/8001/5174), since the real ports were in use.
+
+### What a fresh clone gets
+
+| | |
+|---|---|
+| Files / size | 524 files, 485 MB (includes git history + the 91 MB checkpoint) |
+| `.env` | **absent** — correctly gitignored, no secret ships |
+| `.env.example` | present |
+| Trained checkpoint | present, 91 MB |
+| `evaluation_metrics.json` | present |
+| `node_modules` / build output | absent |
+
+### Cold start, measured
+
+```
+docker compose up -d --build          10s   (layers cached; ~156s uncached)
+container start -> first HTTP 200     66s   (includes ResNet50 + CLIP downloads)
+warm restart -> healthy               17s
+```
+
+The 66s cold boot includes `Downloading resnet50-11ad3fa6.pth` and the CLIP
+weights, both of which land in named volumes and are never fetched again.
+
+### The startup sequence works unattended
+
+```
+Running upgrade  -> f0a32a0b30dd, initial schema
+... all 7 migrations ...
+Running upgrade b2abbe5bc236 -> c6c94791979f, scans.anon_session
+Application startup complete.
+Seeded 2 evaluation metric row(s) from evaluation_metrics.json
+```
+
+That last line is the R2-2 fix proving itself on a machine that has never
+run `evaluate.py` and has no dataset. The seeded numbers came back identical
+to the source machine — `kermany_test=0.9517`, `external_test=0.8813`, under
+model version `resnet50_oct_91dfa561392c432c`. **The content-hash keying
+works across machines**, which was the whole point.
+
+### Verified on the fresh instance
+
+| Check | Result |
+|---|---|
+| `JWT_SECRET_KEY` missing → compose refuses | **aborts** with the actionable message |
+| Frontend served, security headers present | 200, CSP + X-Frame-Options |
+| SPA fallback (`/history` direct load) | 200 |
+| Prediction on a machine that never trained | **CNV @ 1.0** |
+| Non-OCT rejected | 422 |
+| Admin bootstrap via `grant_role.py` | `a@example.com: viewer -> admin` |
+| Admin lists users / reads metrics | 200 / 200 |
+| Data survives full restart | 3 accounts → 3 accounts |
+| Token survives restart | 200 (stateless JWT + `.env` secret) |
+| Re-seeding does not duplicate rows | still exactly 2 |
+
+### Resource footprint
+
+| | |
+|---|---|
+| Backend image | **3.06 GB** |
+| Frontend image | 94 MB |
+| Postgres image | 642 MB |
+| HF cache volume | 1.21 GB |
+| Torch cache volume | 102 MB |
+| Postgres data volume | 48 MB |
+| **Total disk** | **≈ 5.2 GB** |
+| Memory idle (backend / db / frontend) | 525 MB / 24 MB / 13 MB |
+| Memory during inference | **686 MB peak** (backend) |
+
+### 🟠 R8-1 — The footprint rules out most free hosting tiers
+
+686 MB peak RSS and a 3.06 GB image do not fit the common free tiers
+(Render free web services and Fly.io's smallest shared instances sit at
+256–512 MB RAM, with image-size limits well below 3 GB). The dominant costs
+are PyTorch itself plus the CLIP model, and neither is removable without
+giving up the OOD gate or the classifier.
+
+This is not a defect — it is the honest consequence of shipping a real CNN
+plus CLIP rather than an API call to someone else's model. But the project
+brief assumed free hosting, so it needs stating: **a realistic deployment is
+a small paid VPS (2 GB RAM, 10 GB disk) or an institutional machine**, not a
+free PaaS tier. A free *static* host for the frontend plus a paid backend is
+the usual split.
+
+### 🟡 R8-2 — Reserved email domains are rejected at registration
+
+Registering `admin@fresh.test` returns **422**:
+
+> "The part after the @-sign is a special-use or reserved name that cannot be
+> used with email."
+
+This is `email_validator` correctly enforcing RFC 2606, not a bug — real
+domains work (`.com`, `.org`, `iit.du.ac.bd` all accepted). Worth knowing
+before a demo: **do not create accounts on `.test`, `.local` or
+`localhost`**, which are exactly the domains someone reaches for when setting
+up a throwaway login. The error message is clear and, since R4-1, renders
+readably in the UI rather than as `[object Object]`.
+
+### 🟡 R8-3 — Ports are hardcoded in `docker-compose.yml`
+
+5433 / 8000 / 5173 are literals. Anyone whose machine already uses one has to
+edit the compose file, and my own test hit this immediately. Also worth
+knowing: because Compose **appends** rather than replaces sequences, a naive
+`docker-compose.override.yml` adds a second port binding instead of replacing
+the first — the override needs the `!override` tag. Making the host ports
+`${DB_PORT:-5433}` etc. would remove the sharp edge entirely.
+
+### ⚪ Honest list of what is *not* production-ready
+
+Stated plainly, since the brief asks for it:
+
+- **CPU-only inference by design.** Fine for one scan at a time; there is no
+  batching, no queue, and a single Uvicorn worker. Concurrent users serialise.
+- **Single instance assumed.** The rate limiter keeps state in-process and
+  scan images sit on a local bind mount — both break behind more than one
+  replica.
+- **No HTTPS anywhere.** Everything is plain HTTP on localhost; TLS would be
+  a reverse proxy's job and none is configured.
+- **CORS and CSP are pinned to `http://localhost:5173` / `:8000`.** A real
+  deployment must change both, in `backend/main.py` and `frontend/nginx.conf`.
+- **`VITE_API_BASE_URL` is baked in at build time**, so pointing the frontend
+  at a different API means rebuilding the image, not changing an env var.
+- **Database credentials are `visioret:visioret`**, hardcoded in the compose
+  file. Fine locally; must move to secrets for anything reachable.
+- **No backups, no healthcheck on the backend** (only on Postgres), no log
+  aggregation, no monitoring.
+- **Anonymous scan images accumulate** on disk and are only removed by
+  running `purge_anonymous.py` by hand.
+
+### R8 verdict — is it deploy ready?
+
+**As a demonstrable, self-contained research application: yes.** A clean
+clone reaches a working, fully-featured system in about a minute with two
+commands and one generated secret, with migrations, model weights and
+published metrics all handled automatically. Nothing was missing, and nothing
+required a step the README does not document.
+
+**As an internet-facing service: no**, and it is not claimed to be — no TLS,
+hardcoded credentials and origins, single-instance assumptions, and a
+footprint that needs a paid VPS. Those are scope boundaries rather than
+defects, and they are now written down instead of implied.
+
+---
+
+## R7 — End-to-end functional test
+
+Every user flow walked against the running stack as each role, plus the
+failure paths. Run after R1–R6 changed backend validation, rate limiting,
+CSP, caching and frontend error handling — nothing had exercised those
+together as a single journey.
+
+**Result: 60 checks, 60 passed, 0 defects found.** This is the only
+checkpoint so far that produced no findings.
+
+### Flow 1 — anonymous visitor
+
+| Check | Result |
+|---|---|
+| `GET /api/health` | 200 |
+| `POST /api/predict` (real OCT) | **CNV @ 1.0** |
+| Grad-CAM overlay URL returned and fetchable | yes / 200 |
+| Explanation returned | 489 chars |
+| Probabilities sum to 1 | 1.0 |
+| `GET /api/scans` scoped to own session | 1 scan |
+| Own scan by id | 200 |
+| Same scan **without** the session header | **404** |
+| `can_review` | False |
+| `/api/metrics`, `/api/admin/users`, feedback | 401 / 401 / 401 |
+| **non-OCT upload** | **422**, message shown, no diagnosis |
+| oversized (80 MB) | **413** |
+| corrupt image | 400 |
+| decompression bomb | 400 |
+| nonexistent scan | 404 |
+
+### Flow 2 — viewer (register → use → limits)
+
+Register → role is `viewer` (never self-elevated); duplicate email 400; login
+200; wrong password 401; predict 200 with `owner_name` attributed;
+`GET /api/scans` returns **only own** scans; `can_review` False;
+metrics/admin/feedback all **403**; cannot open an anonymous scan (404).
+
+Profile: rename 200; password change **without** the current password 400;
+**with** it 200; login with the new password 200; with the old one **401**;
+`PATCH /api/auth/me {"role":"admin"}` **400**.
+
+### Flow 3 — reviewer
+
+Login 200; sees **all 23 scans**; opens the anonymous scan 200; `can_review`
+True.
+
+Feedback: mark correct → recorded with reviewer attribution; overwrite as
+incorrect with `corrected_class` → **exactly one feedback row remains**
+(upsert verified in the database, not assumed); incorrect without a corrected
+class **400**; `corrected_class: "GLAUCOMA"` **400**; feedback on a missing
+scan **404**.
+
+Metrics: 2 splits (`external_test`, `kermany_test`) with a 4×4 confusion
+matrix. `/api/admin/users` **403** — reviewer is not admin.
+
+### Flow 4 — admin
+
+6 accounts listed with scan/review counts; own row flagged `is_self`; both
+admin rows `is_editable: false`.
+
+**Promote viewer → reviewer**, then that account immediately reads
+`/api/metrics` **200**. **Demote back**, and the same account immediately gets
+**403**. That is worth having ready for a panel: it demonstrates roles are
+resolved from the database per request, not frozen into the token at login.
+
+Refusals: grant admin 400 · change own role 400 · modify another admin 400 ·
+unknown user 404 · bogus role 400.
+
+### UI dress rehearsal
+
+Driven through the real interface, not the API:
+
+- File attached via the actual file input → **"READY · oct_scan.jpg · 62 KB"**.
+- Analyze → **Scan #57**, both images rendered and **both 512×496** —
+  independent confirmation that the R2-3 Grad-CAM geometry fix works in the
+  product, with meaningful `alt` text on both.
+- Prediction, class distribution (CNV 100.0%, others 0.0% — *rendered*, not
+  stuck at zero, which re-confirms R6-1), interpretation text, and the
+  Compare / Original / Grad-CAM controls all present.
+- **Non-OCT upload** → `role="alert"` panel reading "Not recognised as a
+  retinal OCT scan", and critically `diagnosisShown: false` — the safety
+  property holds in the UI, not just in the API.
+- History → session-scoped archive with class filter, ID search and sort.
+- Reviewer review panel → "Incorrect" reveals a class picker
+  (CNV/DME/DRUSEN/NORMAL) plus comment box; saving shows a "Saving…" state,
+  then **"Marked incorrect — recorded as DME. · Test Researcher · Aug 28,
+  2026, 11:12 AM · Change review"**.
+- A **reviewer** hitting `/admin` is redirected to `/`; an **admin** sees 6
+  rows with 4 editable role selects (the two admin rows correctly locked).
+
+### Incidental verification
+
+Deleting the test account's scan removed its prediction with **zero orphans**,
+confirming the `cascade="all, delete-orphan"` added in R3-8e actually works.
+
+### One environment event, not a defect
+
+All three containers exited **255** simultaneously mid-run, with clean logs up
+to the last request — a Docker daemon restart, not an application fault.
+`docker compose up -d` restored the stack and every flow then passed.
+
+### R7 verdict
+
+No defects. Every role boundary, every failure path, and the full demo
+journey behave correctly through both the API and the interface.
+
+---
 
 ## R6 — Accessibility & responsive
 
