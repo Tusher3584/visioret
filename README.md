@@ -528,3 +528,4 @@ that names them:
 | [`REVIEW_CHECKPOINTS.md`](REVIEW_CHECKPOINTS.md) | Pre-defense review plan and findings |
 | [`PROJECT_CONTEXT.md`](PROJECT_CONTEXT.md) | Deep context: decisions, dead ends, and their reasoning |
 | [`DEFENSE_NOTES.md`](DEFENSE_NOTES.md) | Likely examiner questions, honest answers, and where each claim can be regenerated |
+| [`DEPLOYMENT.md`](DEPLOYMENT.md) | Step-by-step guide to hosting Visioret free on a public URL |
