@@ -238,9 +238,9 @@ patient scans is the failure this design was adopted to prevent.
 `feedback`, `evaluation_metrics`.
 
 Notable design points:
-- **`model_versions`** is keyed by checkpoint file mtime, so retraining
-  produces a new row and every prediction stays attributable to the exact
-  model that made it.
+- **`model_versions`** is keyed by a SHA-256 of the checkpoint's contents,
+  so retraining produces a new row and every prediction stays attributable
+  to the exact model that made it (see §9 #13 for why it is no longer mtime).
 - **`evaluation_metrics`** stores per-class metrics and the full confusion
   matrix as JSON, so the metrics page shows real evaluation output rather
   than headline numbers only.

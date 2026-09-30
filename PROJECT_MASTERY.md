@@ -3125,7 +3125,7 @@ the same numbers as the source machine.
 
 ## 28. Git / Development History — [CONFIRMED]
 
-**15 commits, 2026-08-02 → 2026-08-28, single branch `main`.**
+**16 commits, 2026-08-02 → 2026-08-28, single branch `main`.**
 
 | Commit | Date | What it reveals |
 |---|---|---|
@@ -3141,7 +3141,8 @@ the same numbers as the source machine.
 | `e9a2d18` last overhaul on this whole project | 08-26 | |
 | `6eff73e` added admin logic | 08-26 | The third role |
 | `ae23ed2`, `b44bf5f`, `68be2f3` | 08-26/27 | Pre-defense review fixes |
-| `c9ef8f7` project ready for deployment | 08-28 | HEAD |
+| `c9ef8f7` project ready for deployment | 08-28 | |
+| `cb9c03c` added several md files for better understanding | 08-28 | HEAD — the review/handoff documents |
 
 **What the history proves, and it is worth saying:** the architecture was **not
 designed up front**. It began as a single-file Streamlit demo and grew a

@@ -274,8 +274,8 @@ FastAPI  ──►  OOD gate (grayscale → CLIP zero-shot)
 PostgreSQL 16 · React 19 · TypeScript · Vite · Tailwind CSS v4 · React Router 7 ·
 Framer Motion · Docker Compose.
 
-`model_versions` is keyed by the checkpoint file's modification time, so
-retraining creates a new row and no historical prediction is ever silently
+`model_versions` is keyed by a SHA-256 of the checkpoint file's contents, so
+retraining creates a new row, re-cloning the repo does not, and no historical prediction is ever silently
 re-attributed to a model that did not make it.
 
 ## API reference

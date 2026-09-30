@@ -44,9 +44,10 @@ The user has said this directly — professionalism and rigor matter, not just
 Full stack (model + FastAPI backend + PostgreSQL + React frontend, all
 wired together via Docker Compose) is built, tested, and running. A
 post-completion review surfaced real gaps and new requirements (see §4);
-these are now being worked through one at a time via `TODO.md`.
-**Checkpoint 1 (out-of-distribution detection) is done and verified.**
-Checkpoint 2 (OCT-specific preprocessing) is next, not yet started.
+these were worked through one at a time via `TODO.md`.
+**Checkpoints 1–10 are done and verified, as is the pre-defense review
+(R1–R9 in `REVIEW_CHECKPOINTS.md`).** Checkpoint 11 (hosted deployment) is
+the only one not started — its plan is in `DEPLOYMENT.md`.
 
 **Read `TODO.md` right after this file** — it's the authoritative, living
 checkpoint list with checkboxes. This document explains the *why* behind
@@ -215,10 +216,13 @@ Two stages, cheapest first, entry point still `model/ood_detector.py`'s
 1. **Grayscale heuristic** — unchanged from stage 1 above
    (`is_grayscale_heuristic`, threshold 12.0 mean channel difference).
 2. **CLIP zero-shot semantic check** — `model/clip_ood.py`, using
-   `openai/clip-vit-base-patch32`. The image is scored against 8 text
+   `openai/clip-vit-base-patch32`. The image is scored against 10 text
    prompts; index 0 is the only accepting prompt ("an OCT scan"), the other
-   seven cover people, objects, animals, natural photographs, X-ray/CT,
-   abstract art and gradients. The OCT prompt must win the **argmax** —
+   nine cover people, objects, animals, natural photographs, X-ray/CT,
+   abstract art, gradients, charts/plots, and screenshots/documents. (The
+   last two were added in the pre-defense review after a grayscale
+   confusion-matrix plot was accepted as OCT — see R5 in
+   `REVIEW_CHECKPOINTS.md`.) The OCT prompt must win the **argmax** —
    there is deliberately **no tuned probability threshold**, because a tuned
    threshold is exactly what failed before.
 
@@ -312,12 +316,14 @@ visioret/
     auth.py                         # bcrypt hashing, JWT, role dependencies (viewer/reviewer/admin)
     schemas.py                       # Pydantic request/response models
     storage.py                        # saves scan images to backend/media/
+    rate_limit.py                      # fixed-window limiter for the auth endpoints
     grant_role.py                      # role CLI -- the ONLY way to create an admin
     purge_anonymous.py                  # deletes anonymous scans + their image files
     db/
       models.py                      # SQLAlchemy models, all 7 entities
       session.py                      # DB engine/session, reads DATABASE_URL
-      model_version.py                 # shared get_or_create_model_version
+      model_version.py                 # shared get_or_create_model_version (SHA-256 keyed)
+      seed_metrics.py                   # seeds committed metrics into an empty DB at startup
       write_evaluation.py               # best-effort metric write from eval scripts
     alembic/versions/               # 7 migrations, chain intact
     Dockerfile                      # CPU-only, model/ volume-mounted not baked in
@@ -402,10 +408,13 @@ Docker image once confident it's correct.
   fixed across all training runs so far.
 - **Model files are volume-mounted, not baked into Docker images** — lets
   retraining or recalibration take effect without an image rebuild.
-- **`ModelVersion` DB rows are keyed by checkpoint file mtime** — so
-  retraining automatically gets its own row and predictions stay
-  attributable to the exact model that made them, with no manual versioning
-  needed.
+- **`ModelVersion` DB rows are keyed by a SHA-256 of the checkpoint's
+  contents** (`backend/db/model_version.py`) — so retraining automatically
+  gets its own row and predictions stay attributable to the exact model that
+  made them, with no manual versioning needed. This originally used the
+  file's mtime, which a `git clone` changes; that left the metrics page empty
+  on every fresh clone, so it was switched to a content hash in the
+  pre-defense review.
 - **OOD detection needs no negative training data** by design (see §3) —
   this was a deliberate, justified pivot away from the original plan, not a
   compromise. Worth explaining this reasoning if it comes up in a defense.
