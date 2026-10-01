@@ -1,0 +1,26 @@
+# Caddy: the single public entry point of the production stack
+# (docker-compose.prod.yml). One origin for the whole app.
+#
+# SITE_ADDRESS comes from .env:
+#   visioret.eastasia.cloudapp.azure.com -> automatic HTTPS (Let's Encrypt),
+#                                           HTTP redirected to HTTPS
+#   http://localhost or :80              -> plain HTTP (local test, Codespaces)
+
+{$SITE_ADDRESS} {
+	encode zstd gzip
+
+	# Everything the FastAPI app serves. /docs, /redoc and /openapi.json are
+	# the auto-generated API docs -- public on purpose (FEATURES.md §12); every
+	# endpoint behind them is still authorization-checked.
+	@backend path /api/* /media/* /docs /docs/* /redoc /openapi.json
+	handle @backend {
+		reverse_proxy backend:8000
+	}
+
+	# Everything else is the React app. nginx in the frontend container
+	# already does the SPA fallback (/history, /scans/5 -> index.html) and
+	# sets the cache policy and security headers.
+	handle {
+		reverse_proxy frontend:80
+	}
+}

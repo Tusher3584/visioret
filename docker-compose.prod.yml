@@ -1,0 +1,112 @@
+# Production stack -- what runs on the public server (see DEPLOYMENT.md).
+#
+#   docker compose -f docker-compose.prod.yml up -d --build
+#
+# Differences from docker-compose.yml (local development), and why:
+#
+#   - Caddy is the ONLY service with published ports. It terminates HTTPS
+#     and routes /api + /media to the backend and everything else to the
+#     frontend, so the browser sees a single origin. That is what lets the
+#     frontend use relative /api/... URLs, and makes CORS irrelevant.
+#   - db, backend and frontend publish nothing. In the dev file Postgres is
+#     on host port 5433 with password "visioret" -- on a public machine that
+#     would be an open, guessable database.
+#   - Secrets come from .env (gitignored); compose refuses to start without
+#     them rather than falling back to a default.
+#   - restart: unless-stopped everywhere, so a crash or a VM reboot brings
+#     the site back without anyone logging in.
+#
+# `name:` gives this stack its own containers and volumes. Without it, both
+# compose files in this directory would share the project name "visioret",
+# and running this one locally would take over the dev containers and the
+# dev database volume (whose password was set at init and would no longer
+# match).
+name: visioret-prod
+
+services:
+  db:
+    image: postgres:16
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: visioret
+      POSTGRES_PASSWORD: "${POSTGRES_PASSWORD:?not set - see .env.production.example}"
+      POSTGRES_DB: visioret
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U visioret"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    restart: unless-stopped
+    environment:
+      # POSTGRES_PASSWORD is generated with `openssl rand -hex`, so it is
+      # URL-safe and can be embedded here without escaping.
+      DATABASE_URL: "postgresql+psycopg2://visioret:${POSTGRES_PASSWORD:?not set}@db:5432/visioret"
+      JWT_SECRET_KEY: "${JWT_SECRET_KEY:?not set - see .env.production.example}"
+    # Same as the Dockerfile's CMD plus --proxy-headers. Behind Caddy, every
+    # request's peer address is Caddy's own, so without this the auth rate
+    # limiter (backend/rate_limit.py) would put ALL visitors in one bucket --
+    # ten failed logins by anyone would lock out everyone. --proxy-headers
+    # makes request.client the address from X-Forwarded-For instead.
+    #
+    # Trusting that header from any source ('*') is safe ONLY because this
+    # service publishes no port: the sole thing that can reach it is Caddy,
+    # which overwrites X-Forwarded-For rather than passing a client's through.
+    command: >
+      sh -c "cd backend && alembic upgrade head && cd .. &&
+      uvicorn backend.main:app --host 0.0.0.0 --port 8000
+      --proxy-headers --forwarded-allow-ips='*'"
+    volumes:
+      - ./model:/app/model
+      - ./backend/media:/app/backend/media
+      - torch_cache:/root/.cache/torch
+      - hf_cache:/root/.cache/huggingface
+    depends_on:
+      db:
+        condition: service_healthy
+
+  frontend:
+    build:
+      context: ./frontend
+      args:
+        # Empty on purpose: api/client.ts then builds relative URLs
+        # (/api/predict, /media/...), which Caddy routes on the same origin.
+        VITE_API_BASE_URL: ""
+    restart: unless-stopped
+    depends_on:
+      - backend
+
+  caddy:
+    image: caddy:2
+    restart: unless-stopped
+    environment:
+      # A bare hostname (visioret.eastasia.cloudapp.azure.com) makes Caddy
+      # obtain and renew a Let's Encrypt certificate automatically.
+      # http://localhost or :80 serves plain HTTP -- for local testing and
+      # for GitHub Codespaces, which terminates HTTPS itself.
+      SITE_ADDRESS: "${SITE_ADDRESS:?not set - see .env.production.example}"
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      # The issued certificate lives here. Losing it means re-issuing on the
+      # next start, and Let's Encrypt rate-limits repeated issuance.
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - frontend
+      - backend
+
+volumes:
+  pgdata:
+  torch_cache:
+  hf_cache:
+  caddy_data:
+  caddy_config:
