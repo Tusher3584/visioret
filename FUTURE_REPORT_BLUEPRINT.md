@@ -9,7 +9,9 @@
 > presentation. It does not assume any report structure, chapter list,
 > formatting rule, or marking criterion — **none of those are known yet.**
 >
-> **Written:** 2026-08-28, against commit `cb9c03c`.
+> **Written:** 2026-08-28, against commit `cb9c03c`. **Deployment facts
+> updated 2026-10-02** after the app went live (Part 1, §3.5, §19.7, Part 20,
+> Parts 22, 25, 26, 30, 31 and the AI instructions).
 > **Companion documents:** `PROJECT_MASTERY.md` (deep technical explanation),
 > `REVIEW_CHECKPOINTS.md` (what was tested and found), `TODO.md` (build log).
 
@@ -56,11 +58,11 @@ these distinctions in the final report.**
 | **Primary purpose** | Classify retinal OCT B-scans into 4 disease classes and explain each prediction | **[CONFIRMED]** — implementation |
 | **Domain** | Medical imaging / explainable AI / ophthalmology | **[CONFIRMED]** |
 | **Target users** | Not documented. Implementation supports anonymous users, account holders, clinical reviewers, administrators | **[UNKNOWN as an intent]** / **[CONFIRMED as implemented roles]** |
-| **Architecture** | 3-tier containerised web application with the ML model in-process | **[CONFIRMED]** — `docker-compose.yml`, `backend/main.py` |
+| **Architecture** | 3-tier containerised web application with the ML model in-process; in production, a Caddy reverse proxy in front | **[CONFIRMED]** — `docker-compose.yml`, `docker-compose.prod.yml`, `backend/main.py` |
 | **Database** | PostgreSQL 16, 7 tables, 7 Alembic migrations | **[CONFIRMED]** |
-| **Deployment model** | Local Docker Compose. No cloud deployment exists | **[CONFIRMED]** — no CI/CD, no cloud config in the repo |
-| **Current status** | Feature-complete for local demonstration; hosting not yet done | **[CONFIRMED]** — `TODO.md` Checkpoint 11 unchecked; `DEPLOYMENT.md` marked "not started" |
-| **Repository state** | 16 commits, single branch `main`, 2026-08-02 → 2026-08-28 | **[CONFIRMED]** — `git log` |
+| **Deployment model** | Local Docker Compose for development; **publicly deployed** on one Azure VM via `docker-compose.prod.yml` + Caddy (HTTPS), live at <https://visioret.eastasia.cloudapp.azure.com> since 2026-10-02. No CI/CD | **[CONFIRMED]** — `docker-compose.prod.yml`, `deploy/Caddyfile`, `DEPLOYMENT.md`, `TODO.md` Checkpoint 11 |
+| **Current status** | Feature-complete and **publicly hosted**; all 11 checkpoints done | **[CONFIRMED]** — `TODO.md` Checkpoint 11 checked; `DEPLOYMENT.md` status "LIVE" |
+| **Repository state** | 18+ commits, single branch `main`, 2026-08-02 → 2026-10 (18 at `ba7d116`) | **[CONFIRMED]** — `git log`; re-count before quoting |
 
 ### Terminology to use consistently
 
@@ -269,7 +271,7 @@ than "requirements".
 | Security | **Reviewed, with documented gaps** | See Part 13 |
 | Portability | **Achieved** | Verified by cloning fresh and running |
 | Performance | **Measured for resources only** | See Part 18 |
-| Availability / uptime | **[UNKNOWN]** | Never deployed; no measurement possible |
+| Availability / uptime | **Recovery measured; uptime not** | Live since 2026-10-02. Healthy again 61 s after a deliberate VM reboot, unattended. No uptime monitoring exists, so no uptime percentage can be claimed |
 
 ## 3.6 Constraints — [CONFIRMED]
 
@@ -2569,15 +2571,47 @@ docker compose exec db psql -U visioret -d visioret
 docker compose logs -f backend
 ```
 
-### 19.7 Production deployment — [CONFIRMED: does not exist]
+### 19.7 Production deployment — [CONFIRMED: live since 2026-10-02]
 
-**The application has never been deployed.** `TODO.md` Checkpoint 11 is
-unchecked; `DEPLOYMENT.md` is explicitly marked "not started". There is no CI/CD
-configuration, no cloud provider config, no reverse proxy for TLS.
+> **Supersedes** the 2026-08-28 version of this section, which correctly said
+> the app had never been deployed at that time.
 
-`DEPLOYMENT.md` contains a **planned** path (Hugging Face Spaces + Neon
-Postgres) with a 16-step procedure. **It is a plan, not a record.** Do not
-report it as accomplished.
+**Live at <https://visioret.eastasia.cloudapp.azure.com>.**
+
+- **Host:** one Azure virtual machine — Ubuntu 24.04, `Standard_B2als_v2`
+  (2 vCPU, 4 GiB RAM, + 2 GB swap), region East Asia — funded by Azure for
+  Students credit.
+- **Stack:** `docker-compose.prod.yml` — `db`, `backend`, `frontend` plus
+  **Caddy** as the only publicly reachable service. Caddy obtains and renews
+  a Let's Encrypt certificate and redirects HTTP to HTTPS; `deploy/Caddyfile`
+  routes `/api/*`, `/media/*` and the API docs to the backend and everything
+  else to the frontend, on **one origin**.
+- **Hardening vs. the local stack:** no published ports for db/API; database
+  password and JWT key generated on the server into a `.env` that never
+  leaves it; frontend built with an empty `VITE_API_BASE_URL` (relative URLs,
+  so CORS does not apply); Uvicorn `--proxy-headers` so the auth rate limiter
+  keys on real client addresses (without it, one visitor's failed logins
+  would have locked out everyone — found while planning the deployment).
+- **Measured:** OCT upload → prediction ~4 s end to end over the internet;
+  non-OCT → 422; HTTPS + redirect verified; **healthy again 61 s after a VM
+  reboot** with no manual step. First image build on the VM ~20 min.
+- **Decision history** (report this — it is engineering judgement):
+  1. The written plan (Hugging Face Docker Space + Neon) was dropped on
+     2026-09-30 when Hugging Face's docs showed Docker Spaces now need a paid
+     plan, and that a Space's disk resets on restart (uploaded scans would be
+     lost). Free web tiers (~512 MB) were already ruled out by R8's 686 MB
+     peak.
+  2. Azure for Students: no card, a real persistent disk, existing Compose
+     stack runs nearly unchanged.
+  3. First VM creation failed (`RequestDisallowedByAzure`) — student
+     subscriptions are restricted to specific regions; re-created in East
+     Asia.
+- **Still true, must be stated:** no CI/CD (updates are a manual `git pull`
+  + rebuild on the server); no automated backups; no monitoring; single
+  instance with no failover; hosting depends on time-limited student credit.
+- **Evidence:** `docker-compose.prod.yml`, `deploy/Caddyfile`,
+  `.env.production.example`, `DEPLOYMENT.md`, `TODO.md` Checkpoint 11,
+  `REVIEW_CHECKPOINTS.md` R8 update note.
 
 ---
 
@@ -2700,7 +2734,6 @@ Note:         Takes minutes. Best pre-recorded.
 
 ### 20.2 Demonstrations that are NOT possible — do not promise these
 
-- ❌ **A live public URL** — never deployed.
 - ❌ **Live training** — an epoch takes 35–54 minutes.
 - ❌ **GPU inference in Docker** — the container is CPU-only by design.
 - ❌ **Automated tests running** — none exist.
@@ -2895,7 +2928,7 @@ Report use:  Dataset chapter — visualises the imbalance that motivated class
 | **Limitations** | 16 items | Part 17 | CONFIRMED | |
 | **Future Work** | Active learning; calibration; DICOM; deployment; tests; close `/media` | Part 17 improvements | INFERRED | Derived from actual limitations |
 | **Conclusion** | Evidence-based summary | throughout | CONFIRMED | Claim only what was measured |
-| **Deployment** | Docker architecture; fresh-clone verification; **not deployed** | Part 19 | CONFIRMED | `DEPLOYMENT.md` is a plan |
+| **Deployment** | Docker architecture; fresh-clone verification; **live Azure deployment** (Caddy/HTTPS, single origin, reboot recovery) and why the hosting plan changed | Part 19 (§19.7) | CONFIRMED | Live URL can be shown |
 | **Ethics / Clinical** | Not a medical device; no PHI; no clinical validation | `FEATURES.md` §11 | CONFIRMED | **Include this — a medical AI report should** |
 
 ---
@@ -3153,7 +3186,7 @@ is a real hazard in this repository.
 | `train_quick.py` is a valid training path | **LEGACY and DANGEROUS.** Running it overwrites the good checkpoint with a weaker, leakage-inflated model |
 | The feature-distance OOD code in `ood_detector.py` is live | **Inert.** Kept as evidence of the retired approach |
 | `UI_REDESIGN_BRIEF.md` describes the current UI | **HISTORICAL.** It describes the UI *before* the redesign |
-| `DEPLOYMENT.md` means the app is deployed | **It is a PLAN.** Marked "not started". The app has never been hosted |
+| The app has never been deployed | **Outdated.** It has been live since 2026-10-02 (§19.7). Before then this was true — older copies of this file say so |
 | The test set is fully patient-disjoint | **It is not**, for Kermany — 40.9% of test images share a patient with training. Measured, and conservative in direction |
 | Performance was benchmarked | **No latency or throughput benchmark exists.** Only resource and query-count measurements |
 | There was a user study or clinical validation | **Neither exists** |
@@ -3163,7 +3196,7 @@ is a real hazard in this repository.
 | CSRF protection is missing (a flaw) | **Not applicable** — header-based auth, not cookies |
 | Anonymous scans are deleted when the session ends | They become **unreachable**, not deleted. Files persist until `purge_anonymous.py` is run |
 | The Streamlit app is a secondary UI added later | **It came FIRST** — commit `83c1dc8`, and predates the entire web stack |
-| The architecture was designed up front | Git history shows it **grew incrementally** over 16 commits |
+| The architecture was designed up front | Git history shows it **grew incrementally** over 18+ commits |
 | Design motives are known where code is silent | Several are marked NOT DOCUMENTED in Part 15. Do not manufacture them |
 | Docker was a requirement | The proposal listed it as **optional** |
 | There is a literature review | **None exists** anywhere in the repository |
@@ -3234,7 +3267,7 @@ is a real hazard in this repository.
 - [ ] A development timeline with dates (git history gives commit dates only)
 - [ ] Hours spent / effort estimate
 - [ ] Any supervisor-suggested future work
-- [ ] Whether the deployment (`DEPLOYMENT.md`) was completed before submission
+- [x] Whether the deployment (`DEPLOYMENT.md`) was completed before submission — **yes, live 2026-10-02** (§19.7). Confirm it is still running at submission time
 
 ---
 
@@ -3488,9 +3521,9 @@ role change. The contrast between the first two lands hardest.
 | Cold start | 66 s | measured (R8) | CONFIRMED | ✅ | — | No |
 | Peak memory | 686 MB | measured (R8) | CONFIRMED | ✅ | — | No |
 | Backend image | 3.06 GB | measured (R8) | CONFIRMED | ✅ | — | No |
-| Commits | 16, 2026-08-02 → 2026-08-28 | git log | CONFIRMED | ✅ | — | No |
+| Commits | 18 at `ba7d116` (2026-08-02 → 2026-10-01) | git log | CONFIRMED | ✅ | — | Re-count |
 | **Automated tests** | **NONE EXIST** | git ls-files | CONFIRMED | ✅ MUST state | ✅ | No |
-| **Deployment** | **NEVER DEPLOYED** | no CI/cloud config | CONFIRMED | ✅ MUST state | ✅ | Update if done |
+| **Deployment** | **LIVE** — https://visioret.eastasia.cloudapp.azure.com, Azure VM, Caddy/HTTPS; reboot recovery 61 s; no CI/CD | `docker-compose.prod.yml`, `DEPLOYMENT.md` | CONFIRMED | ✅ | ✅ | Confirm still running |
 | **Objectives** | — | — | **UNKNOWN** | ❌ | ❌ | **YES — from proposal** |
 | **Problem statement** | — | — | **UNKNOWN** | ❌ | ❌ | **YES — from proposal** |
 | **Literature review** | — | — | **UNKNOWN** | ❌ | ❌ | **YES — must be written** |
@@ -3526,8 +3559,9 @@ are not sufficient without them.
 2. **Capture the screenshots** in Part 21. None exist.
 3. **Verify the project still runs** — `docker compose up -d --build` — so the
    numbers can still be regenerated if challenged.
-4. **Decide whether the deployment happened.** If you completed
-   `DEPLOYMENT.md`, say so; if not, the report must state it was not deployed.
+4. **The deployment happened** (live 2026-10-02, §19.7). Before writing,
+   confirm the URL still responds; if the VM has since been stopped, the
+   report should say it *was* deployed and when.
 
 ### Suggested prompt for the future AI
 
@@ -3565,7 +3599,9 @@ are not sufficient without them.
 >
 > Constraints you must obey:
 > - There is **no automated test suite**. Do not imply otherwise.
-> - The application has **never been deployed**. Do not imply otherwise.
+> - The application **is deployed** (Azure VM, live since 2026-10-02 — Part 19
+>   §19.7), but with **no CI/CD, no monitoring and no automated backups**. Do
+>   not imply a deployment pipeline or uptime figures that do not exist.
 > - The Kermany test split is **not fully patient-disjoint** — state the
 >   measured caveat in Part 8/D2.
 > - Do not fabricate results, benchmarks, citations, user studies or design

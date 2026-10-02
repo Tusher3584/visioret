@@ -45,8 +45,9 @@ Coherence Tomography) disease classification**.
 | Database | PostgreSQL 16 |
 | Auth | bcrypt password hashing + stateless JWT (PyJWT) |
 | Frontend | React 19, TypeScript, Vite, Tailwind CSS v4, React Router v7, Framer Motion |
-| Serving | nginx (static frontend), Uvicorn (API) |
-| Orchestration | Docker Compose (3 services: `db`, `backend`, `frontend`) |
+| Serving | nginx (static frontend), Uvicorn (API), Caddy (HTTPS reverse proxy, production only) |
+| Orchestration | Docker Compose — local: 3 services (`db`, `backend`, `frontend`); production: the same plus `caddy` |
+| Hosting | Azure virtual machine (Ubuntu 24.04, 2 vCPU / 4 GiB), Let's Encrypt TLS — live at <https://visioret.eastasia.cloudapp.azure.com> |
 | Secondary UI | Streamlit demo (`app.py`) kept in sync with the same model pipeline |
 
 ---
@@ -447,6 +448,7 @@ Worth having ready — professors often ask "what went wrong?"
 
 ## 10. Deployment
 
+### Local (`docker-compose.yml`)
 - **Docker Compose**, 3 services. Postgres on host port 5433 (5432 was taken
   by a pre-existing local install). Frontend on 5173 via nginx, API on 8000.
 - **Persistent volumes** for Postgres data, the Torch model cache, and the
@@ -454,6 +456,35 @@ Worth having ready — professors often ask "what went wrong?"
 - **Migrations run automatically** on backend startup.
 - **Backend is CPU-only in Docker** for portability; CUDA is used
   automatically when training on the host.
+
+### Production — live at <https://visioret.eastasia.cloudapp.azure.com>
+- **Host:** one Azure virtual machine — Ubuntu 24.04, `Standard_B2als_v2`
+  (2 vCPU, 4 GiB RAM, plus 2 GB swap), region East Asia — funded by Azure for
+  Students credit (~$1.25/day). Deployed 2026-10-02.
+- **Stack:** `docker-compose.prod.yml` — the same three services plus
+  **Caddy**, which is the only publicly reachable service. It obtains and
+  renews a **Let's Encrypt** certificate automatically and redirects HTTP to
+  HTTPS. `deploy/Caddyfile` routes `/api/*`, `/media/*` and the API docs to
+  the backend and everything else to the frontend.
+- **Single origin:** the frontend is built with an empty API base URL, so it
+  calls relative `/api/...` paths — CORS and build-time API addresses do not
+  apply.
+- **Hardening relative to the local stack:** database and API publish no
+  ports; database password and JWT key are generated on the server into a
+  `.env` that never leaves it; Uvicorn runs with `--proxy-headers` so the auth
+  rate limiter sees each visitor's real address instead of the proxy's
+  (otherwise one visitor's failed logins would lock out everyone).
+- **Self-healing:** `restart: unless-stopped` on every service and Docker
+  enabled at boot. **Measured: healthy again 61 s after a VM reboot**, no
+  manual step.
+- **Verified live:** HTTPS certificate and redirect, OCT upload → prediction
+  (~4 s end to end), non-OCT upload → 422 with no diagnosis, scan images
+  served, accounts and role promotion.
+- **Why a VM rather than a free PaaS:** ~686 MB peak RAM and a ~3 GB image
+  exceed ~512 MB free web tiers, and Hugging Face now requires a paid plan
+  for Docker Spaces (checked 2026-09-30).
+- **Updates are manual:** `git pull` and one rebuild command on the server —
+  see `DEPLOYMENT.md`, which also covers operations, backups and cost.
 
 ---
 
@@ -492,6 +523,13 @@ Stated explicitly so nobody assumes otherwise:
   cannot send an Authorization header) and documented in `backend/main.py`,
   but it is the first thing to close in any deployment with real patient data.
 - **JWT has no refresh/revocation** — a 7-day token cannot be invalidated.
+- **Deployment is single-instance and manually operated** — one VM, no
+  failover, no CI/CD pipeline (updates are `git pull` + rebuild on the server),
+  no scheduled database backups, and hosting is funded by time-limited student
+  credit.
+- **Registration and uploads are open to the internet** on the live instance.
+  New accounts are always viewers, so the exposure is CPU time and disk space,
+  not other users' data.
 - **Metrics are reviewer-gated**, so an examiner viewing anonymously cannot
   see them.
 - Grad-CAM++ / alternative attribution methods not compared quantitatively.

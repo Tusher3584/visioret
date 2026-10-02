@@ -201,19 +201,53 @@ trade-off (plain `<img>` tags cannot send an Authorization header) documented
 in `backend/main.py`, and it is the first thing to close for real patient
 data. **Volunteer this rather than being caught by it.**
 
-### "Is it deployment ready?"
+### "Is it deployed? Where does it run?"
 
-As a self-contained research application, **yes** — verified by cloning the
-repo fresh and following the README: two commands and one generated secret
-reach a working system in ~66 seconds, with all 7 migrations applied
-automatically, model weights downloaded, and the published metrics seeded from
-a committed file (so the metrics page works on a machine that has never seen
-the dataset).
+**Yes — it is live at <https://visioret.eastasia.cloudapp.azure.com>**, on
+one Azure virtual machine (Ubuntu 24.04, 2 vCPU / 4 GiB, East Asia region),
+paid for by Azure for Students credit.
 
-As an internet-facing service, **no**: no TLS, credentials and origins
-hardcoded for local use, single-instance assumptions, and a ~686 MB / ~3 GB
-footprint that exceeds free hosting tiers. Those are scope boundaries, and
-they are written down in R8 rather than implied.
+How a request reaches it: the browser connects over HTTPS to **Caddy**, the
+only service the internet can reach. Caddy holds a free Let's Encrypt
+certificate it renews itself, sends `/api` and `/media` to FastAPI, and
+everything else to nginx serving the built React app — all on one origin.
+Postgres and the API have no public ports at all.
+
+**Why a VM, not a free platform** — a decision, not a default:
+- the backend needs ~686 MB RAM and a ~3 GB image (PyTorch + CLIP); free web
+  tiers give ~512 MB;
+- the first plan, Hugging Face Spaces, was dropped when its current docs
+  showed Docker Spaces need a paid plan — and its disk resets on restart,
+  which would have lost every uploaded scan;
+- a VM ran the existing Docker Compose stack almost unchanged, on a real disk.
+
+**What had to change for the internet** (R8 had listed these):
+TLS added; database password and JWT key generated on the server instead of
+hardcoded; database and API ports closed; CORS/CSP made irrelevant by serving
+everything from one origin. **One issue was found while planning:** behind a
+proxy, the login rate limiter saw every visitor as the proxy's address — ten
+failed logins by anyone would have locked everyone out. Fixed with Uvicorn
+`--proxy-headers` and verified, including that a spoofed `X-Forwarded-For` is
+ignored.
+
+**Resilience, measured:** after a deliberate VM reboot the site was healthy
+again in **61 s** with no manual step (`restart: unless-stopped`, Docker
+enabled at boot).
+
+**Honest limits to volunteer:** single instance with no failover; updates
+are a manual `git pull` + rebuild (no CI/CD); backups are manual; hosting is
+funded by time-limited student credit.
+
+**Evidence:** `docker-compose.prod.yml`, `deploy/Caddyfile`, `DEPLOYMENT.md`,
+Checkpoint 11 in `TODO.md`.
+
+### "Is it reproducible from the repo?"
+
+Yes — verified by cloning the repo fresh and following the README: two
+commands and one generated secret reach a working system in ~66 seconds,
+with all 7 migrations applied automatically, model weights downloaded, and
+the published metrics seeded from a committed file (so the metrics page works
+on a machine that has never seen the dataset).
 
 ---
 
@@ -256,18 +290,30 @@ any success does.
 | Patient-grouping impact, regenerable | `python -m model.audit_patient_leakage` |
 | In-distribution numbers, regenerable | `python model/evaluate.py` |
 | Cross-dataset numbers, regenerable | `python -m model.evaluate_cross_dataset` |
+| How it is hosted, and how to operate it | `DEPLOYMENT.md`, `docker-compose.prod.yml`, `deploy/Caddyfile` |
 
 ---
 
 ## 6. Things to be careful about in the live demo
 
+The demo runs from **<https://visioret.eastasia.cloudapp.azure.com>** in any
+browser — no local setup on the presentation machine.
+
+- **Open the site on your phone the morning of** to confirm it is up. If the
+  VM was stopped in the Azure portal, **Start** it — the site is healthy
+  ~60 s later.
+- **Your scans won't be on the presentation machine.** Keep the sample OCT
+  images (`samples/` on GitHub) and one ordinary photo in Google Drive or on a
+  USB stick.
+- **Keep a backup video** of the full flow on your phone and a USB stick. The
+  venue's network is the one thing the deployment cannot control.
 - **Don't register accounts on `.test`, `.local` or `localhost`** — RFC 2606
   reserved domains are correctly rejected with a 422. Use a real-looking
   domain.
-- **Ports 5433 / 8000 / 5173 are hardcoded** in `docker-compose.yml`. Check
-  they are free on the demo machine beforehand.
-- **First boot downloads model weights.** Start the stack before the session,
-  not during it — a cold start is ~66s, and it needs network access.
+- **If demoing locally instead:** ports 5433 / 8000 / 5173 are hardcoded in
+  `docker-compose.yml` (check they are free), and first boot downloads model
+  weights — start the stack before the session (~66 s cold start, needs
+  network access).
 - **The metrics page is reviewer-only.** Have a reviewer account signed in, or
   an examiner will see a "sign in to view" prompt rather than your results.
 - **Have a non-OCT image ready.** Rejecting it is one of the most convincing

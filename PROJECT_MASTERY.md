@@ -287,9 +287,12 @@ impossible to forget silently.
 ```text
 visioret/
 ├── app.py                       # Streamlit demo UI (secondary, standalone)
-├── docker-compose.yml           # 3 services, 3 volumes
+├── docker-compose.yml           # LOCAL: 3 services, 3 volumes
+├── docker-compose.prod.yml      # PRODUCTION: + caddy, only caddy public (§27.4)
+├── deploy/Caddyfile             # HTTPS + same-origin routing
 ├── requirements.txt             # Python deps, pinning policy in header
 ├── .env.example                 # template; real .env is gitignored
+├── .env.production.example      # template for the server's .env
 ├── .dockerignore
 │
 ├── model/                       # ML layer — no web framework imports
@@ -704,7 +707,10 @@ security control. It protects the *browser user*, not the server —
 `curl` ignores it entirely. Never describe CORS as protecting your API.
 
 **Known limitation:** the origins are hardcoded. Deploying to any other URL
-requires editing `backend/main.py`.
+requires editing `backend/main.py` — **unless** the frontend and API share
+one origin, which is how the live deployment avoids it: Caddy serves both
+from `https://visioret.eastasia.cloudapp.azure.com`, so the browser never
+makes a cross-origin request and CORS never comes into play (§27.4).
 
 ### 5.7 ORM and SQLAlchemy
 
@@ -2035,7 +2041,10 @@ environment-driven.
 
 **Violates:** ports, CORS origins, CSP origins, and database credentials are
 hardcoded. **[Honest assessment]** acceptable for a local research tool,
-explicitly listed as a deployment blocker.
+explicitly listed as a deployment blocker. **Resolved for production
+without touching the dev setup:** `docker-compose.prod.yml` reads the
+database password from a server-side `.env` and serves one origin, so the
+hardcoded origins never apply (§27.4).
 
 ### 14.7 Dependency injection — **followed, idiomatically**
 
@@ -2161,7 +2170,10 @@ const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL as string | undefined) ?
 
 Vite performs *static replacement* during the build. Retargeting the API
 therefore requires **rebuilding the image**, not changing an env var. A real
-deployment constraint.
+deployment constraint — which production sidesteps by building with an
+**empty** value: `"" ?? "http://localhost:8000"` is `""` (`??` only replaces
+`null`/`undefined`), so every URL becomes relative (`/api/predict`) and the
+bundle works on whatever origin serves it.
 
 ### 16.2 The secret-handling posture
 
@@ -2922,7 +2934,9 @@ security-critical function in the codebase. *Fix:* start with §18.3's list.
 
 **W2 — `/media` served without authentication.** uuid4 filenames make URLs
 unguessable, but possession of a link is permanent access to a medical image.
-Deliberate and documented; on a public URL it is the first thing to close.
+Deliberate and documented. The app **is now on a public URL**, so this is a
+live exposure — acceptable only because the instance holds demo scans, not
+patient data; it is the first thing to close before it ever does.
 *Fix:* an authenticated proxy endpoint or short-lived signed URLs.
 
 **W3 — The patient-grouping key includes the class name.** Undermines the
@@ -2938,8 +2952,12 @@ data access. Navigable now; first thing to split as it grows.
 **W5 — No JWT revocation.** A leaked token is valid up to 7 days. *Fix:* short
 access tokens + refresh tokens, or a denylist.
 
-**W6 — Hardcoded configuration.** Ports, CORS origins, CSP origins, DB
-credentials. Blocks deployment anywhere but localhost without editing source.
+**W6 — Hardcoded configuration (dev stack).** Ports, CORS origins, CSP
+origins, DB credentials in `docker-compose.yml` / `backend/main.py` /
+`nginx.conf`. *Worked around for production* rather than removed:
+`docker-compose.prod.yml` takes secrets from `.env` and serves a single
+origin, so none of the hardcoded values are used on the live server. They
+still bite anyone deploying differently (e.g. API on its own domain).
 
 **W7 — Rate limiting is process-local and auth-only.** `/api/predict` — the
 most expensive endpoint — is unthrottled entirely.
@@ -3062,8 +3080,9 @@ Irrelevant at current volume; not at 100k scans. **[INFERRED — not measured.]*
 | No JWT revocation | Medium | 7-day window after a leak |
 | Registration reveals existing emails | Low–Medium | "An account with this email already exists" — a deliberate UX trade-off, unlike login |
 | Rate limiting only on auth | Medium | `/api/predict` unthrottled; limiter resets on restart |
-| Hardcoded DB credentials | Medium in deployment | `visioret:visioret` in compose |
-| No HTTPS | Medium in deployment | A reverse proxy's job; none configured |
+| Hardcoded DB credentials | Low (dev only) | `visioret:visioret` in the **dev** compose. Production generates the password on the server and publishes no database port |
+| ~~No HTTPS~~ | **Resolved in production** | Caddy + Let's Encrypt, auto-renewed, HTTP→HTTPS redirect. The local dev stack is still plain HTTP |
+| Open registration + unthrottled `/api/predict` on the public instance | Low–Medium | Anyone can create a viewer account or spend CPU on uploads; viewers cannot reach others' data |
 | `/docs`, `/redoc`, `/openapi.json` public | Low | Deliberate for a research demo; every endpoint behind them is still authorization-checked |
 | **No CSRF protection** | **Not applicable** | Auth is an `Authorization` header, not a cookie — browsers don't attach it automatically, so classic CSRF does not apply. **Know this reasoning; it is a common interview trap.** |
 
@@ -3111,21 +3130,70 @@ the same numbers as the source machine.
 
 ### 27.3 What is *not* production-ready — [CONFIRMED]
 
+Written for the local stack; ~~struck~~ items are resolved by the production
+stack in §27.4.
+
 - CPU-only, single worker, no batching or queue — concurrent users serialise.
 - Single-instance assumptions: process-local rate limiter, local-disk images.
-- No HTTPS; CORS and CSP pinned to `localhost`.
-- Database credentials hardcoded.
-- `VITE_API_BASE_URL` fixed at build time.
-- No backups, no backend healthcheck, no monitoring or log aggregation.
+- ~~No HTTPS; CORS and CSP pinned to `localhost`.~~ → Caddy + Let's Encrypt;
+  single origin.
+- ~~Database credentials hardcoded.~~ → generated on the server into `.env`.
+- ~~`VITE_API_BASE_URL` fixed at build time.~~ → built empty; relative URLs.
+- No automated backups, no backend healthcheck, no monitoring or log
+  aggregation.
 - Anonymous images accumulate until `purge_anonymous.py` is run by hand.
-- **686 MB peak / 3 GB image exceeds common free PaaS tiers.** See
-  `DEPLOYMENT.md` for the Hugging Face Spaces + Neon path.
+- **686 MB peak / 3 GB image exceeds common free PaaS tiers** — which is why
+  the live instance is a VM, not a PaaS.
+
+### 27.4 The live deployment — [CONFIRMED, live since 2026-10-02]
+
+**URL:** <https://visioret.eastasia.cloudapp.azure.com>
+**Host:** one Azure VM — Ubuntu 24.04, `Standard_B2als_v2` (2 vCPU, 4 GiB
+RAM, + 2 GB swap), East Asia — funded by Azure for Students credit.
+
+```
+Visitor's browser
+   │ HTTPS (Let's Encrypt cert, obtained + renewed by Caddy)
+   ▼
+Azure VM — firewall allows only 22, 80, 443
+   └─ docker-compose.prod.yml   (project name: visioret-prod)
+        caddy     publishes 80/443   deploy/Caddyfile
+          ├─ /api/* /media/* /docs /redoc /openapi.json  ──►  backend:8000
+          └─ everything else                             ──►  frontend:80
+        backend   no published port; uvicorn --proxy-headers
+        frontend  no published port; built with VITE_API_BASE_URL=""
+        db        no published port; password from ~/visioret/.env
+```
+
+**Each difference from the dev stack, and its reason:**
+
+| Change | Why |
+|---|---|
+| Caddy in front, only public service | TLS without managing certificates; one origin |
+| Empty `VITE_API_BASE_URL` | Relative URLs → same origin → no CORS, no CSP `connect-src` changes |
+| No published ports for db/backend/frontend | The dev stack exposes Postgres with a guessable password |
+| Secrets from `.env`, generated **on the server** with `openssl rand` | They never transit a chat, a repo, or another machine |
+| `restart: unless-stopped` everywhere | Recovers from crashes and reboots unattended — **measured: healthy 61 s after a VM reboot** |
+| `uvicorn --proxy-headers --forwarded-allow-ips='*'` | Behind a proxy, `request.client.host` is the proxy, so `rate_limit.py` would key **every** visitor identically — ten failed logins by anyone would lock out everyone. Trusting the header from anyone is safe only because nothing but Caddy can reach the backend, and Caddy overwrites `X-Forwarded-For`. Verified: real client logged, spoofed header ignored |
+| `name: visioret-prod` | Running the prod file locally must not reuse the dev containers or the dev database volume (whose password was set at init) |
+
+**Why a VM and not a PaaS** — [CONFIRMED, decided 2026-09-30 against the
+providers' then-current docs]: free web tiers (~512 MB) are below the 686 MB
+peak; Hugging Face Docker Spaces now need a paid plan, and their disk resets
+on restart (uploaded scans would be lost); Oracle/Google need a card. Azure
+for Students needed no card and gave a real persistent disk.
+
+**Deploying an update:** commit and push, then on the server
+`git pull && docker compose -f docker-compose.prod.yml up -d --build`.
+There is **no CI/CD** — this is a manual pipeline, and in an interview it
+should be described as one. Operations, backups and cost: `DEPLOYMENT.md`.
 
 ---
 
 ## 28. Git / Development History — [CONFIRMED]
 
-**16 commits, 2026-08-02 → 2026-08-28, single branch `main`.**
+**18 commits, 2026-08-02 → 2026-10-01, single branch `main`** (counted at
+`ba7d116`; later documentation commits are not listed).
 
 | Commit | Date | What it reveals |
 |---|---|---|
@@ -3142,7 +3210,9 @@ the same numbers as the source machine.
 | `6eff73e` added admin logic | 08-26 | The third role |
 | `ae23ed2`, `b44bf5f`, `68be2f3` | 08-26/27 | Pre-defense review fixes |
 | `c9ef8f7` project ready for deployment | 08-28 | |
-| `cb9c03c` added several md files for better understanding | 08-28 | HEAD — the review/handoff documents |
+| `cb9c03c` added several md files for better understanding | 08-28 | The review/handoff documents |
+| `055236d` updated the outdated info | 09-30 | Doc corrections (CLIP prompt count, SHA-256 model versioning) |
+| `ba7d116` made the app deploy ready | 10-01 | `docker-compose.prod.yml`, `deploy/Caddyfile`, `.env.production.example` — the production stack, deployed live 10-02 |
 
 **What the history proves, and it is worth saying:** the architecture was **not
 designed up front**. It began as a single-file Streamlit demo and grew a

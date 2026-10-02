@@ -4,11 +4,15 @@ Getting Visioret onto a public HTTPS URL, **at zero cost**, so it can be
 demonstrated from any device with a browser — a borrowed laptop, the venue's
 PC, or a phone.
 
-> **Status (2026-10-01):** Phase 0 is done and verified locally — it only
-> needs committing and pushing. The VM exists: East Asia,
-> `Standard_B2als_v2`, hostname **`visioret.eastasia.cloudapp.azure.com`**,
-> key `visioret_key2.pem`. Next: Phase 3 on the server, then Phase 4 once the
-> push is done.
+> **Status (2026-10-02): LIVE at <https://visioret.eastasia.cloudapp.azure.com>.**
+> Phases 0–4 done. VM: East Asia, `Standard_B2als_v2` (2 vCPU, 4 GiB),
+> Ubuntu 24.04, key `C:\Users\User\.ssh\visioret_key2.pem`. Verified live:
+> Let's Encrypt HTTPS with HTTP→HTTPS redirect, OCT prediction (~4 s),
+> non-OCT rejection (422), scan images served, and recovery to healthy
+> **61 s after a reboot** with no manual steps. Remaining: Phase 5 accounts
+> (register, then promote to admin), Phase 6 backup dry run.
+>
+> To manage the running server, jump to **Managing the live server**.
 
 ---
 
@@ -49,7 +53,7 @@ in one move — the same reasoning as the old plan, now without a paid host.
 
 ---
 
-## Phase 0 — Code changes ✅ done (verified locally; commit + push pending)
+## Phase 0 — Code changes ✅ done (verified locally, pushed in `ba7d116`)
 
 Verified against the production stack running locally with
 `SITE_ADDRESS=http://localhost`: only Caddy publishes ports; `/`, `/history`,
@@ -92,7 +96,7 @@ existing `docker-compose.yml`.
       `SITE_ADDRESS=http://localhost` and walk the whole demo: upload, Grad-CAM,
       non-OCT rejection, register/login, roles, metrics, review, History,
       direct navigation to `/history` and `/scans/1`.
-- [ ] **You commit and push to GitHub.** The VM clones from GitHub, so the
+- [x] **You commit and push to GitHub.** The VM clones from GitHub, so the
       server only ever gets what has been pushed.
 
 ---
@@ -305,20 +309,104 @@ starts empty — it is a fallback, not a mirror.
 
 ---
 
-## Updating the live site later
+## Managing the live server
 
-After committing and pushing a change from this PC, on the server:
+Everything below is run **on the server**. Connect first, from PowerShell on
+this PC:
+
+    ssh -i $HOME\.ssh\visioret_key2.pem azureuser@visioret.eastasia.cloudapp.azure.com
+
+then:
 
     cd ~/visioret
-    git pull
-    docker compose -f docker-compose.prod.yml up -d --build
 
-Only changed images are rebuilt; the database and uploaded scans are
-untouched (they live in volumes and `backend/media/`).
+Every command below starts with `docker compose -f docker-compose.prod.yml`
+because the production stack lives in that file, not the default
+`docker-compose.yml`. Leaving `-f ...` off makes compose look at the *dev*
+file and report that nothing is running.
 
-**Database backup** (worth doing once before the defense):
+### Where things live on the server
 
-    docker compose -f docker-compose.prod.yml exec db pg_dump -U visioret visioret > backup.sql
+| What | Where | Survives reboot / rebuild? |
+|---|---|---|
+| Code | `~/visioret` (a git clone of GitHub `main`) | yes |
+| Secrets | `~/visioret/.env` (owner-only, never in git) | yes |
+| Accounts, scans, reviews | Docker volume `visioret-prod_pgdata` | yes |
+| Uploaded scans + Grad-CAM images | `~/visioret/backend/media/scans/` | yes |
+| HTTPS certificate | Docker volume `visioret-prod_caddy_data` | yes — renewed automatically |
+| ResNet / CLIP weight caches | Docker volumes `..._torch_cache`, `..._hf_cache` | yes |
+
+`docker compose ... down` stops and removes the containers but **keeps** all
+of the above. `down -v` would **delete the volumes** — every account and
+scan. Never add `-v` on the server.
+
+### Everyday commands
+
+| I want to… | Command |
+|---|---|
+| See if everything is running | `docker compose -f docker-compose.prod.yml ps` |
+| Check health from anywhere | open `https://visioret.eastasia.cloudapp.azure.com/api/health` |
+| Watch backend logs live (`Ctrl+C` stops watching, not the app) | `docker compose -f docker-compose.prod.yml logs -f backend` |
+| See the last 100 lines of any service | `docker compose -f docker-compose.prod.yml logs --tail 100 caddy` (or `backend`, `frontend`, `db`) |
+| Restart just the backend | `docker compose -f docker-compose.prod.yml restart backend` |
+| Restart everything | `docker compose -f docker-compose.prod.yml restart` |
+| Memory / disk | `free -h` and `df -h /` |
+| List accounts and roles | `docker compose -f docker-compose.prod.yml exec backend python -m backend.grant_role --list` |
+| Make someone admin | `docker compose -f docker-compose.prod.yml exec backend python -m backend.grant_role someone@example.com admin` |
+| Make someone a reviewer (or use the in-app Admin page) | `... grant_role someone@example.com reviewer` |
+| Preview deleting anonymous scans | `docker compose -f docker-compose.prod.yml exec backend python -m backend.purge_anonymous --dry-run --all` |
+| Delete anonymous scans older than a day | `docker compose -f docker-compose.prod.yml exec backend python -m backend.purge_anonymous --older-than-hours 24` |
+| Leave the server | `exit` |
+
+### Deploying a change
+
+1. Change code on this PC, test it locally, commit, push to GitHub.
+2. On the server:
+
+       cd ~/visioret
+       git pull
+       docker compose -f docker-compose.prod.yml up -d --build
+
+Only images whose inputs changed are rebuilt, and only their containers are
+replaced. A frontend-only change takes about a minute; a change to
+`requirements.txt` reinstalls Python packages and takes much longer. The
+site is down for a few seconds while the backend container restarts (~60 s
+for it to load the models again).
+
+Changes to `model/` (e.g. a retrained checkpoint) need only
+`docker compose -f docker-compose.prod.yml restart backend` after the pull,
+because `model/` is mounted into the container rather than built into it.
+
+### Backups
+
+Copy the database to a file on the server, then download it to this PC:
+
+    docker compose -f docker-compose.prod.yml exec -T db pg_dump -U visioret visioret > ~/backup.sql
+
+and from PowerShell on **this PC**:
+
+    scp -i $HOME\.ssh\visioret_key2.pem azureuser@visioret.eastasia.cloudapp.azure.com:backup.sql .
+
+### Credit and cost
+
+- Remaining credit: <https://www.microsoftazuresponsorships.com/balance>
+- The VM costs about **$1.25/day** while running (B2als_v2 at $0.0526/hr,
+  plus a little for disk and IP).
+- To stop spending **after the presentation**: Azure portal → VM `visioret`
+  → **Stop**. A stopped (deallocated) VM costs only a few cents a day for its
+  disk; the site goes offline. **Start** brings everything back exactly as it
+  was, since all containers restart on boot. The DNS name stays the same.
+- To remove everything permanently: delete the resource group `visioret-rg`.
+  This cannot be undone.
+
+### Server maintenance
+
+Ubuntu installs security updates automatically (`unattended-upgrades` is on
+by default). Some need a reboot to take effect; rebooting is safe at any time
+— the site was measured coming back **61 s** after a reboot with no manual
+steps:
+
+    sudo reboot
 
 ---
 

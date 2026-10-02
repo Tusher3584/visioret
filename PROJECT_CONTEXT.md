@@ -45,9 +45,11 @@ Full stack (model + FastAPI backend + PostgreSQL + React frontend, all
 wired together via Docker Compose) is built, tested, and running. A
 post-completion review surfaced real gaps and new requirements (see §4);
 these were worked through one at a time via `TODO.md`.
-**Checkpoints 1–10 are done and verified, as is the pre-defense review
-(R1–R9 in `REVIEW_CHECKPOINTS.md`).** Checkpoint 11 (hosted deployment) is
-the only one not started — its plan is in `DEPLOYMENT.md`.
+**All 11 checkpoints are done and verified, as is the pre-defense review
+(R1–R9 in `REVIEW_CHECKPOINTS.md`).** Checkpoint 11 (deployment) went live on
+2026-10-02 at <https://visioret.eastasia.cloudapp.azure.com> — one Azure VM
+running `docker-compose.prod.yml` behind Caddy/HTTPS. How it was set up and
+how to operate it: `DEPLOYMENT.md`.
 
 **Read `TODO.md` right after this file** — it's the authoritative, living
 checkpoint list with checkboxes. This document explains the *why* behind
@@ -273,7 +275,7 @@ See `TODO.md` for the authoritative, checkbox-tracked version. Summary:
 | 8 | Feedback/correction workflow | ✅ Done (reviewer-gated) |
 | 9 | User accounts | ✅ Done — bcrypt + JWT, viewer/reviewer/admin RBAC |
 | 10 | Accessibility pass | ✅ Done — contrast computed, 320px verified |
-| 11 | Deployment | ⬜ Not started (stretch, do last) |
+| 11 | Deployment | ✅ Done — live on Azure VM, Caddy + Let's Encrypt (plan changed from HF Spaces, see `TODO.md`) |
 
 Pre-defense review of the whole project is tracked separately in
 `REVIEW_CHECKPOINTS.md` (R1–R9).
@@ -348,9 +350,13 @@ visioret/
       index.css                        # Tailwind v4 @theme semantic design tokens
     Dockerfile                      # multi-stage: node build -> nginx serve
     nginx.conf                      # SPA fallback routing fix
-  docker-compose.yml               # db (port 5433) + backend (8000) + frontend (5173)
+  docker-compose.yml               # LOCAL: db (port 5433) + backend (8000) + frontend (5173)
+  docker-compose.prod.yml          # PRODUCTION: + caddy; only caddy publishes ports
+  deploy/Caddyfile                 # HTTPS + same-origin routing for production
   .env.example                     # copy to .env; JWT_SECRET_KEY is REQUIRED
+  .env.production.example          # template for the server's .env
   README.md                        # setup, usage, results, limitations
+  DEPLOYMENT.md                    # how the live server was built + how to operate it
   FEATURES.md                      # complete feature inventory + all known gaps
   REVIEW_CHECKPOINTS.md            # pre-defense review plan R1-R9 and findings
   TODO.md                          # the living checkpoint list -- READ THIS TOO
@@ -366,6 +372,23 @@ session starts on this machine — check with `docker info`, and if it's down,
 either ask the user to start it or launch
 `"/c/Program Files/Docker/Docker/Docker Desktop.exe"` and wait via
 `until docker info >/dev/null 2>&1; do sleep 3; done`.
+
+**The live server** (since 2026-10-02):
+
+| | |
+|---|---|
+| URL | <https://visioret.eastasia.cloudapp.azure.com> |
+| Machine | Azure VM `visioret`, resource group `visioret-rg`, East Asia, `Standard_B2als_v2` (2 vCPU / 4 GiB + 2 GB swap), Ubuntu 24.04 |
+| Paid by | Azure for Students credit — no card on file; ~$1.25/day while running |
+| SSH | `ssh -i $HOME\.ssh\visioret_key2.pem azureuser@visioret.eastasia.cloudapp.azure.com` (key lives only on the user's PC) |
+| Code | `~/visioret` on the server, a clone of GitHub `main` |
+| Secrets | `~/visioret/.env` on the server only — generated there, never transmitted |
+| Run | always `docker compose -f docker-compose.prod.yml ...` (plain `docker compose` targets the dev file) |
+| Update | `git pull && docker compose -f docker-compose.prod.yml up -d --build` |
+| Admin | `none@email.com` (granted with `backend.grant_role`) |
+
+Never run `down -v` there — it deletes the database volume. Full operating
+guide: `DEPLOYMENT.md` → "Managing the live server".
 
 **Dataset locations:** all four datasets live outside the repo on this
 machine (none are part of git), and their paths are constants at the top of

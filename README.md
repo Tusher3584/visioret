@@ -10,6 +10,9 @@ It is a full-stack system: a fine-tuned ResNet-50, a FastAPI service, a
 PostgreSQL database with migration-managed schema, and a React front end, all
 runnable with a single `docker compose up`.
 
+**Live demo:** <https://visioret.eastasia.cloudapp.azure.com> — deployed on an
+Azure virtual machine behind HTTPS (see [Deployment](#deployment)).
+
 > **Not a medical device.** This is a research and demonstration system built as
 > a 4th-year undergraduate final project (SPL3) at the Institute of Information
 > Technology, University of Dhaka. It is not approved for clinical use and must
@@ -29,6 +32,7 @@ runnable with a single `docker compose up`.
 - [Running without Docker](#running-without-docker)
 - [Training and evaluation](#training-and-evaluation)
 - [Datasets and attribution](#datasets-and-attribution)
+- [Deployment](#deployment)
 - [Project structure](#project-structure)
 - [Limitations](#limitations)
 - [Further documentation](#further-documentation)
@@ -427,13 +431,50 @@ distributed under CC BY 4.0
 (<https://data.mendeley.com/datasets/rscbjbr9sj/2>). These are an unmodified
 subset, redistributed with attribution per that license.
 
+## Deployment
+
+The public instance runs on a single **Azure virtual machine** (Ubuntu 24.04,
+`Standard_B2als_v2`: 2 vCPU, 4 GiB RAM, region East Asia), funded by Azure for
+Students credit, using `docker-compose.prod.yml`:
+
+```
+Browser ──HTTPS──► Caddy (only public service; Let's Encrypt cert, HTTP→HTTPS)
+                     ├─ /api/*, /media/*, /docs  ──►  backend  (FastAPI)
+                     └─ everything else          ──►  frontend (nginx, built SPA)
+                   db (Postgres 16) — not reachable from outside
+```
+
+How it differs from the local `docker-compose.yml`, and why:
+
+- **One origin.** The frontend is built with an empty API base URL, so every
+  call is a relative `/api/...` request routed by Caddy. No CORS, no
+  build-time API address.
+- **Nothing but Caddy is published.** The database and API have no public
+  ports; locally Postgres is on 5433 with a hardcoded password.
+- **Secrets are generated on the server** into a `.env` that never leaves it
+  (`.env.production.example` is the template).
+- **`restart: unless-stopped`** on every service — measured recovering to
+  healthy **61 s after a VM reboot** with no manual step.
+- **`--proxy-headers` on Uvicorn**, so the login rate limiter keys on each
+  visitor's real address rather than the proxy's. Without it, ten failed
+  logins by anyone would lock out everyone.
+
+**Why a VM and not a free PaaS:** the backend peaks at ~686 MB RAM with a
+~3 GB image (PyTorch + CLIP), above the ~512 MB of common free web tiers, and
+Hugging Face now requires a paid plan for Docker Spaces. Updating the live
+site is `git pull` plus one rebuild command on the server. Full step-by-step
+setup and day-to-day operations: [`DEPLOYMENT.md`](DEPLOYMENT.md).
+
 ## Project structure
 
 ```
 app.py                            # Streamlit demo over the same model pipeline
-docker-compose.yml                # db (5433) + backend (8000) + frontend (5173)
+docker-compose.yml                # local dev: db (5433) + backend (8000) + frontend (5173)
+docker-compose.prod.yml           # production: Caddy + the same three, nothing else public
+deploy/Caddyfile                  # HTTPS + routing for the production stack
 requirements.txt                  # Python deps, pinned for the ML stack
-.env.example                      # copy to .env and fill in
+.env.example                      # copy to .env and fill in (local)
+.env.production.example           # template for the server's .env
 
 model/
   inference.py                    # load_model, preprocess, predict, manual Grad-CAM
@@ -508,13 +549,22 @@ that names them:
 - **No automated test suite.** Verification has been manual and
   script-driven — see `REVIEW_CHECKPOINTS.md` for what was actually exercised
   and how.
-- **Not sized for free hosting.** Peak memory is ~686 MB and the backend image
-  is ~3 GB (PyTorch plus CLIP), which exceeds the common free PaaS tiers. A
-  small paid VPS (2 GB RAM, 10 GB disk) or an institutional machine is the
-  realistic target; the frontend alone can sit on free static hosting.
-- **Not hardened for the public internet** — no TLS, database credentials and
-  allowed origins are hardcoded for local use, and both CORS and the CSP are
-  pinned to `localhost`. See R8 in `REVIEW_CHECKPOINTS.md` for the full list.
+- **Single-instance deployment.** One VM, one backend process, no load
+  balancer or failover. Hosting is funded by time-limited student credit
+  (about $1.25/day), not a permanent budget.
+- **No CI/CD or automated backups.** Deploying is a manual `git pull` and
+  rebuild on the server; database backups are a manual `pg_dump`.
+- **Scan images are served without authentication.** `/media/scans/<uuid>.jpg`
+  needs no login: filenames are random uuid4 values so they cannot be guessed,
+  but anyone holding a link keeps access. A deliberate trade-off (plain `<img>`
+  tags cannot send an Authorization header), documented in `backend/main.py`
+  — and the first thing to close before handling real patient data.
+- **Open to the internet.** Anyone can register (always as a viewer) or upload
+  scans; `/api/predict` is not rate-limited. Viewers cannot see others' scans
+  or record corrections, so the exposure is CPU time and disk space.
+- **The local dev stack is not hardened** — `docker-compose.yml` hardcodes the
+  database password and publishes Postgres and the API. It is for local use
+  only; the deployed stack uses `docker-compose.prod.yml` instead.
 - **Confidence values are raw softmax outputs** and are characteristically very
   high. No calibration analysis has been done.
 - **No PHI handling.** Scans are not linked to patient identities.
@@ -528,4 +578,4 @@ that names them:
 | [`REVIEW_CHECKPOINTS.md`](REVIEW_CHECKPOINTS.md) | Pre-defense review plan and findings |
 | [`PROJECT_CONTEXT.md`](PROJECT_CONTEXT.md) | Deep context: decisions, dead ends, and their reasoning |
 | [`DEFENSE_NOTES.md`](DEFENSE_NOTES.md) | Likely examiner questions, honest answers, and where each claim can be regenerated |
-| [`DEPLOYMENT.md`](DEPLOYMENT.md) | Step-by-step guide to hosting Visioret free on a public URL |
+| [`DEPLOYMENT.md`](DEPLOYMENT.md) | How the live instance was set up on Azure, and how to operate and update it |

@@ -175,6 +175,21 @@ deliverable added and independently fact-checked.
 
 ## R8 — Deployment readiness
 
+> **Update 2026-10-02 — acted on.** The findings below are the review as
+> written (2026-08) and are kept unchanged as a record. Since then the system
+> has been **deployed publicly** at
+> <https://visioret.eastasia.cloudapp.azure.com>: an Azure VM (4 GiB, which
+> R8-1's footprint numbers called for) running a new
+> `docker-compose.prod.yml` behind Caddy. Of the gaps listed in the
+> "internet-facing: no" verdict below, **TLS, hardcoded database credentials,
+> published database/API ports and localhost-pinned CORS/CSP are resolved**
+> in the production stack (the dev `docker-compose.yml` is unchanged and still
+> local-only). R8-3 (hardcoded ports) no longer applies to the deployment —
+> only Caddy publishes 80/443. Single-instance operation remains. One further
+> issue surfaced during deployment planning: behind a proxy, the auth rate
+> limiter keyed every visitor as the proxy's address; fixed with Uvicorn
+> `--proxy-headers`. Details: Checkpoint 11 in `TODO.md`, and `DEPLOYMENT.md`.
+
 Tested by actually doing it: `git clone` of `HEAD` into a clean directory,
 then following the README from scratch on empty volumes, isolated under its
 own compose project so it could not touch the working stack. The only

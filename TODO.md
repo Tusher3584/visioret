@@ -706,9 +706,49 @@ only for reviewers.
       below the sm breakpoint with no element overlap, checked both
       logged-out and logged-in (longer username text) states.
 
-## Checkpoint 11 — Deployment ⚪ stretch, do last
+## Checkpoint 11 — Deployment ✅ DONE (live 2026-10-02)
 
-- [ ] Only attempt once everything above is solid locally
+- [x] Only attempt once everything above is solid locally
+- [x] Hosted publicly: <https://visioret.eastasia.cloudapp.azure.com>
+
+**Outcome.** Deployed on 2026-10-02 to one Azure virtual machine (Ubuntu
+24.04, `Standard_B2als_v2`, 2 vCPU / 4 GiB, East Asia), funded by Azure for
+Students credit, with a new `docker-compose.prod.yml` that puts **Caddy** in
+front as the only public service (automatic Let's Encrypt HTTPS, HTTP→HTTPS
+redirect) and routes `/api` + `/media` to the backend on the same origin.
+
+**The plan changed twice, for reasons worth knowing:**
+1. The first written plan (Hugging Face Docker Space + Neon Postgres) was
+   abandoned when Hugging Face's current docs showed Docker Spaces now need a
+   paid plan to create — and a Space's disk is wiped on restart, which would
+   also have lost every uploaded scan image. Free web tiers (~512 MB) remain
+   too small, as R8 found. Azure for Students needed no card and gave a real
+   disk, so the existing Compose stack could run almost unchanged.
+2. The first VM creation failed with `RequestDisallowedByAzure`: student
+   subscriptions may only deploy to a fixed list of regions. Re-created in
+   East Asia, the closest allowed region with the needed VM sizes.
+
+**What R8 said must change first, and what was done:**
+- TLS → Caddy + Let's Encrypt, auto-renewing.
+- Hardcoded database credentials → generated on the server into a `.env`
+  that never leaves it; Postgres and the API publish no ports.
+- CORS/CSP pointing at `localhost` → made irrelevant: single origin, relative
+  `/api` URLs (frontend built with an empty `VITE_API_BASE_URL`).
+- **Found while planning, not in R8:** behind a proxy, the auth rate limiter
+  saw every request as coming from the proxy, so ten failed logins by anyone
+  would have locked out everyone. Fixed with Uvicorn `--proxy-headers`;
+  verified that the backend logs the real client and ignores a spoofed
+  `X-Forwarded-For`.
+
+**Verified:** the production stack first locally (only Caddy publishes ports,
+all SPA routes, OCT → 200, chart → 422, images, register/login/role
+promotion, metrics seeded, feedback, UI renders with no CSP errors), then
+live (HTTPS + redirect, OCT prediction in ~4 s, non-OCT 422, images), and
+**recovery to healthy 61 s after a VM reboot** with no manual step.
+
+Operations, updates, backups and cost: `DEPLOYMENT.md`.
+
+**Original status note, kept for the record:**
 
 **Status after the pre-defense review (see `REVIEW_CHECKPOINTS.md`, R8).**
 Local deployment readiness has now been *tested* rather than assumed: a fresh
