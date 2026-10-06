@@ -1794,16 +1794,13 @@ identity. Makes no HIPAA/GDPR claim.
 
 ## 14.1 THE CRITICAL FACT — [CONFIRMED]
 
-> **There is no automated test suite. No pytest, no vitest, no test files, no
-> CI configuration.** Verified: `git ls-files` matching test patterns returns
-> **zero**.
-
-**A future AI must not write a "Testing" chapter implying unit or integration
-tests exist.** The honest and defensible framing:
-
-> "Verification was performed through reproducible evaluation scripts and a
-> structured manual review process rather than an automated test suite. The
-> absence of automated tests is acknowledged as a limitation."
+> **SUPERSEDED 2026-10-04.** When this file was written there was no
+> automated test suite. There now is: **73 pytest tests in `tests/`** (28 unit,
+> 45 integration against the real model, CLIP gate and Postgres), all passing,
+> plus a 23-check browser acceptance walk-through, an axe-core scan and live
+> performance measurements. The final report (`Visioret_Technical_Report_Final`,
+> Chapter 10) documents them with recorded outcomes. Still absent: frontend
+> component tests and CI.
 
 ## 14.2 Evidence that DOES exist
 
@@ -2736,7 +2733,7 @@ Note:         Takes minutes. Best pre-recorded.
 
 - ❌ **Live training** — an epoch takes 35–54 minutes.
 - ❌ **GPU inference in Docker** — the container is CPU-only by design.
-- ❌ **Automated tests running** — none exist.
+- ✅ **Automated tests running** — `python -m pytest`, 73 tests, about a minute.
 - ❌ **Multi-user concurrency** — single worker; nothing to show.
 - ❌ **DICOM upload** — unsupported.
 - ❌ **Retraining from collected corrections** — not implemented.
@@ -2922,7 +2919,7 @@ Report use:  Dataset chapter — visualises the imbalance that motivated class
 | **API Design** | 12 endpoints, conventions, the 422 dual meaning | Part 11 | CONFIRMED | |
 | **Frontend / UI** | Routes, hierarchy, state, design tokens, accessibility | Part 12 | CONFIRMED | Accessibility was measured |
 | **Security** | Mechanisms + tested weaknesses | Part 13 | CONFIRMED | Do not claim "secure" |
-| **Testing** | Reproducible scripts + structured review. **No test suite** | Part 14 | CONFIRMED | Must state the absence |
+| **Testing** | 73 automated backend tests, UI walk-through, accessibility and performance tests, structured review | Part 14 (superseded note) | CONFIRMED | No frontend tests, no CI |
 | **Results** | 95.17%/0.9233; 88.1%/0.895; the 82%→88% improvement; leakage audit | committed reports | CONFIRMED | All reproducible |
 | **Discussion** | Why DRUSEN is weakest; leakage direction; the OOD failures; the negative result | Parts 8, 14, 15 | CONFIRMED | |
 | **Limitations** | 16 items | Part 17 | CONFIRMED | |
@@ -3103,7 +3100,8 @@ Answer: Not applicable. CSRF works because browsers attach COOKIES
 ```
 Q:  How did you test it?
 Tests: Honesty
-Answer: There is no automated test suite — a real gap. Verification was
+Answer: [Updated 2026-10-04: 73 automated backend tests now exist; see
+        Part 14.] Originally there was no automated test suite. Verification was
         reproducible evaluation scripts plus a structured review of nine
         checkpoints covering every endpoint, the full authorization matrix,
         injection, XSS, JWT forgery, accessibility, a fresh-clone deployment
@@ -3180,7 +3178,7 @@ is a real hazard in this repository.
 | ❌ Do NOT assume | ✅ The reality |
 |---|---|
 | Objectives or a problem statement exist | **They do not.** Only a proposal *paraphrase* in `PROJECT_CONTEXT.md`. Must come from the student |
-| Tests exist because the code looks testable | **Zero test files.** No pytest, no vitest, no CI |
+| Tests exist because the code looks testable | **Backend only:** 73 pytest tests since 2026-10-04; no frontend tests, no CI |
 | `model/oct_preprocessing.py` is part of the pipeline | **RETIRED.** Only `limit_worker_cv2_threads` is imported. It was a documented negative result |
 | `model/compute_ood_stats.py` / `ood_stats.pth` are used | **RETIRED.** `check_is_oct` never calls them |
 | `train_quick.py` is a valid training path | **LEGACY and DANGEROUS.** Running it overwrites the good checkpoint with a weaker, leakage-inflated model |
@@ -3407,7 +3405,7 @@ exactly.
    6.5 Design decisions               ← Part 15
 
 7. Testing and Evaluation
-   ⚠️ MUST state that no automated test suite exists
+   ⚠️ MUST state that automated tests cover the backend only (no frontend tests, no CI)
    7.1 Verification approach          ← Part 14.2
    7.2 Quantitative results           ← Part 14 E1–E4
    7.3 Leakage audit                  ← Part 14 E4
@@ -3522,7 +3520,7 @@ role change. The contrast between the first two lands hardest.
 | Peak memory | 686 MB | measured (R8) | CONFIRMED | ✅ | — | No |
 | Backend image | 3.06 GB | measured (R8) | CONFIRMED | ✅ | — | No |
 | Commits | 18 at `ba7d116` (2026-08-02 → 2026-10-01) | git log | CONFIRMED | ✅ | — | Re-count |
-| **Automated tests** | **NONE EXIST** | git ls-files | CONFIRMED | ✅ MUST state | ✅ | No |
+| **Automated tests** | **73 pytest tests** (28 unit, 45 integration); no frontend tests, no CI | `tests/` | CONFIRMED 2026-10-04 | ✅ | ✅ | No |
 | **Deployment** | **LIVE** — https://visioret.eastasia.cloudapp.azure.com, Azure VM, Caddy/HTTPS; reboot recovery 61 s; no CI/CD | `docker-compose.prod.yml`, `DEPLOYMENT.md` | CONFIRMED | ✅ | ✅ | Confirm still running |
 | **Objectives** | — | — | **UNKNOWN** | ❌ | ❌ | **YES — from proposal** |
 | **Problem statement** | — | — | **UNKNOWN** | ❌ | ❌ | **YES — from proposal** |
@@ -3598,7 +3596,8 @@ are not sufficient without them.
 >    appears that the code does not support.
 >
 > Constraints you must obey:
-> - There is **no automated test suite**. Do not imply otherwise.
+> - The automated suite covers the **backend only** (73 pytest tests); there are
+>   no frontend component tests and no CI. Do not imply otherwise.
 > - The application **is deployed** (Azure VM, live since 2026-10-02 — Part 19
 >   §19.7), but with **no CI/CD, no monitoring and no automated backups**. Do
 >   not imply a deployment pipeline or uptime figures that do not exist.

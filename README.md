@@ -30,6 +30,7 @@ Azure virtual machine behind HTTPS (see [Deployment](#deployment)).
 - [Architecture](#architecture)
 - [API reference](#api-reference)
 - [Running without Docker](#running-without-docker)
+- [Running the tests](#running-the-tests)
 - [Training and evaluation](#training-and-evaluation)
 - [Datasets and attribution](#datasets-and-attribution)
 - [Deployment](#deployment)
@@ -361,6 +362,29 @@ python -c "import torch; print(torch.cuda.is_available())"
 Every script auto-detects CUDA. A checkpoint trained on GPU loads fine on CPU —
 `torch.load(..., map_location=device)` remaps the tensors.
 
+## Running the tests
+
+```bash
+pip install -r requirements-dev.txt
+```
+
+```bash
+docker compose up -d db
+```
+
+```bash
+python -m pytest
+```
+
+73 tests: unit tests for authentication, the rate limiter and the ML helpers,
+and integration tests that drive every endpoint over HTTP with the **real**
+trained model, the real CLIP gate and a real Postgres database (a throwaway
+`visioret_test` database, recreated and migrated on every run). They include
+the permission matrix, anonymous privacy, upload abuse cases, rate limits and a
+simulated database outage. A full run takes about a minute, most of it loading
+the models once. `tests/perf/perf_predict.py <base-url>` measures response time
+and concurrent correctness against a running deployment.
+
 ## Training and evaluation
 
 The committed checkpoint `model/checkpoints/resnet50_oct.pth` (94 MB) is
@@ -475,6 +499,8 @@ deploy/Caddyfile                  # HTTPS + routing for the production stack
 requirements.txt                  # Python deps, pinned for the ML stack
 .env.example                      # copy to .env and fill in (local)
 .env.production.example           # template for the server's .env
+requirements-dev.txt              # test dependencies (pytest, httpx)
+pytest.ini                        # pytest configuration
 
 model/
   inference.py                    # load_model, preprocess, predict, manual Grad-CAM
@@ -522,6 +548,8 @@ frontend/
   index.css                       # Tailwind v4 @theme semantic design tokens
   nginx.conf                      # SPA fallback, cache policy, security headers
 
+tests/                            # 73 pytest tests (unit + integration) and perf/ script
+
 data/                             # 400-image Kermany subset (ImageFolder layout)
 samples/                          # 4 images, one per class
 ```
@@ -546,9 +574,10 @@ that names them:
   minutes and 5 registrations per hour, per client address. `/api/predict` and
   the read endpoints are unthrottled. The limiter keeps state in-process, so it
   would need shared storage behind more than one worker.
-- **No automated test suite.** Verification has been manual and
-  script-driven — see `REVIEW_CHECKPOINTS.md` for what was actually exercised
-  and how.
+- **Backend-only automated tests.** 73 pytest tests (28 unit, 45 integration
+  against the real model, gate and Postgres) cover the API and ML helpers; the
+  frontend has no component tests — it was verified by a scripted browser
+  walk-through for the final report. No CI pipeline runs the suite yet.
 - **Single-instance deployment.** One VM, one backend process, no load
   balancer or failover. Hosting is funded by time-limited student credit
   (about $1.25/day), not a permanent budget.

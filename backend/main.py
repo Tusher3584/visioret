@@ -12,9 +12,11 @@ from contextlib import asynccontextmanager
 import torch
 from fastapi import Depends, FastAPI, File, Header, HTTPException, Query, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 from PIL import Image, UnidentifiedImageError
 from sqlalchemy import false as sa_false, func
+from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import Session, joinedload, selectinload
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -126,6 +128,27 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="Visioret API", lifespan=lifespan)
+
+
+@app.exception_handler(OperationalError)
+async def database_unavailable(request: Request, exc: OperationalError):
+    """The database could not be reached (connection refused, server restarting,
+    connection dropped mid-request).
+
+    Without this, the error escaped as a plain-text "500 Internal Server Error"
+    -- found by tests/test_api_db_failure.py (midterm test case T10). A 503 says
+    what is actually true: the service is temporarily unable to answer, the
+    request was valid, and retrying later may work. It is JSON with a `detail`
+    field, like every other error here, so the frontend can show it.
+
+    For a prediction, the image files written before the failed commit have
+    already been removed by predict_endpoint's own rollback path by the time
+    this runs.
+    """
+    return JSONResponse(
+        status_code=503,
+        content={"detail": "The database is temporarily unavailable. Please try again in a moment."},
+    )
 
 app.add_middleware(
     CORSMiddleware,

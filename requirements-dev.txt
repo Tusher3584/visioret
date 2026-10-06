@@ -1,0 +1,11 @@
+# Development and test dependencies, on top of requirements.txt.
+#
+#   pip install -r requirements.txt -r requirements-dev.txt
+#   docker compose up -d db      # the tests use a real Postgres (localhost:5433)
+#   python -m pytest
+#
+# httpx is already pulled in indirectly (via huggingface_hub), but FastAPI's
+# TestClient and tests/perf/perf_predict.py use it directly, so it is declared
+# here rather than relied on by accident.
+pytest==8.4.2
+httpx>=0.28.1,<1.0.0

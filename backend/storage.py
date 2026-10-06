@@ -11,7 +11,10 @@ import uuid
 from PIL import Image
 
 ROOT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-MEDIA_DIR = os.path.join(ROOT_DIR, "backend", "media", "scans")
+# Overridable so the test suite can write into a throwaway directory instead
+# of the real media folder. Must end in .../scans: main.py mounts this
+# directory's PARENT at /media, so files are served at /media/scans/<name>.
+MEDIA_DIR = os.environ.get("VISIORET_MEDIA_DIR") or os.path.join(ROOT_DIR, "backend", "media", "scans")
 
 
 def new_scan_id() -> str:

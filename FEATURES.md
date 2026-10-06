@@ -508,8 +508,10 @@ Stated explicitly so nobody assumes otherwise:
 - **Corrections are collected but never used** — an active-learning loop that
   actually retrains on reviewer corrections is the most natural next step.
 - **Anonymous purge is manual**, not scheduled.
-- **No automated test suite** — verification to date has been manual and
-  script-driven, not `pytest`/CI.
+- **No frontend component tests and no CI** — the backend has 73 pytest tests
+  (`tests/`, 28 unit + 45 integration against the real model, gate and
+  Postgres), and the UI was verified by a scripted 23-check browser walk-through
+  for the final report, but nothing runs automatically on push.
 - **Rate limiting covers only authentication** (10 failed logins / 5 min,
   5 registrations / hour, per client address, in-process). `/api/predict` and
   the read endpoints are unthrottled, and the limiter is process-local so it

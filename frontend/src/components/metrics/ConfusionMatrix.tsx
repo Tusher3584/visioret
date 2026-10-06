@@ -1,7 +1,9 @@
 import type { ConfusionMatrix as ConfusionMatrixData } from "../../api/types";
 import { formatCount } from "../../lib/format";
 
-/** Cell tint never exceeds this, so cell text keeps AA contrast at full intensity. */
+/** Cell tint never exceeds this, so cell text keeps AA contrast at full intensity
+ *  -- provided the text is --vr-ink. Muted gray does NOT pass at this alpha in the
+ *  light theme (see the percentage label below). */
 const MAX_ALPHA = 0.7;
 
 /**
@@ -106,7 +108,12 @@ export function ConfusionMatrix({ data }: { data: ConfusionMatrixData }) {
                         <span className="block font-mono text-xs font-medium tabular-nums text-ink">
                           {formatCount(count)}
                         </span>
-                        <span className="mt-0.5 block font-mono text-[10px] tabular-nums text-muted">
+                        {/* text-ink, not text-muted: muted gray on a full-intensity
+                            light-mode cell measured 1.70:1 (error hue) and 2.19:1
+                            (correct hue), far below AA. Ink is >= 4.74:1 on every
+                            cell in both themes; the smaller size keeps it secondary.
+                            Do not soften it with opacity -- 80% ink drops to 3.79:1. */}
+                        <span className="mt-0.5 block font-mono text-[10px] tabular-nums text-ink">
                           {(share * 100).toFixed(0)}%
                         </span>
                       </td>

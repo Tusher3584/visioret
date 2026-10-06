@@ -53,11 +53,16 @@ def _client_key(request: Request, scope: str) -> str:
 
     request.client.host is the peer address. Behind a reverse proxy that is
     the proxy, not the user -- which would make the whole application share
-    one bucket. This deployment serves the API directly (nginx only serves
-    the static frontend, on a different port), so the peer really is the
-    client. If a proxy is ever put in front of the API, this must switch to
-    a validated X-Forwarded-For; trusting that header without a proxy in
-    place would let anyone reset their own limit by setting it.
+    one bucket.
+
+    Local dev serves the API directly, so the peer really is the client. In
+    production (docker-compose.prod.yml) Caddy sits in front, and Uvicorn
+    runs with --proxy-headers, which replaces request.client with the address
+    from X-Forwarded-For before this code sees it. That is safe there only
+    because the backend publishes no port: Caddy is the sole caller, and it
+    overwrites any X-Forwarded-For a client sends. Never enable
+    --proxy-headers on an API that clients can reach directly -- anyone could
+    then reset their own limit by setting the header.
     """
     host = request.client.host if request.client else "unknown"
     return f"{scope}:{host}"

@@ -2325,19 +2325,28 @@ Tailwind and Framer Motion set inline styles on elements.
 
 ### 18.1 The honest state — [CONFIRMED]
 
-**There is no automated test suite.** No `pytest`, no `vitest`, no test files,
-no CI configuration. `git ls-files` returns zero test files.
+> **Updated 2026-10-04.** This section originally (correctly) said there was
+> no automated test suite. One now exists.
 
-**Do not claim otherwise.** The truthful answer to "how did you test it?":
+**`tests/` — 73 pytest tests, all passing** (`python -m pytest`, ~60 s):
+28 unit tests (auth, rate limiter, preprocessing, overlay geometry, grayscale
+gate, explanations, model-version fingerprint) and 45 integration tests that
+drive every endpoint through FastAPI's `TestClient` with the **real** model,
+the real CLIP gate and a real Postgres (`visioret_test`, dropped, recreated
+and migrated with Alembic on each run; images go to a temp dir via
+`VISIORET_MEDIA_DIR`). `tests/conftest.py` explains why nothing is mocked.
 
-> "There is no unit-test suite — that's a real gap. Verification was manual and
-> script-driven: the evaluation scripts are reproducible and I re-ran them to
-> confirm the published numbers to six decimals, and I ran a structured
-> pre-defense review that probed every endpoint, the full authorization matrix,
-> injection, XSS, JWT forgery, and every user flow as each role. The findings
-> are in `REVIEW_CHECKPOINTS.md`."
+Still missing, and worth saying so: frontend component tests (the UI was
+verified by a scripted browser walk-through for the final report, not by a
+committed test), and CI — nothing runs the suite on push.
 
-That is a **much** stronger answer than pretending, and it comes with evidence.
+The truthful answer to "how did you test it?" is now: *"73 automated tests
+against the real model and database, a 23-check browser acceptance walk-through,
+an axe-core accessibility scan, live performance measurement, and a re-run of
+both evaluations that reproduced the published numbers exactly. That round found
+three real defects — a plain-text 500 on database outage, a CSP that broke the
+upload preview on the live site, and light-theme contrast failures — all fixed.
+Earlier, the structured pre-defense review in `REVIEW_CHECKPOINTS.md`."*
 
 ### 18.2 What verification does exist
 
@@ -2928,7 +2937,8 @@ features.**
 
 ### High severity
 
-**W1 — No automated tests.** Every refactor is unverified. The privacy boundary
+**W1 — No automated tests** *(resolved for the backend on 2026-10-04: 73 tests in
+`tests/`; frontend component tests and CI still missing).* Originally: every refactor was unverified. The privacy boundary
 in `_visible_scans_query` has no regression test despite being the most
 security-critical function in the codebase. *Fix:* start with §18.3's list.
 

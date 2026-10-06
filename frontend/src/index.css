@@ -59,7 +59,11 @@
   --vr-line-strong: #b6bdc9;
   --vr-ink: #0f131a;
   --vr-muted: #545d6b;
-  --vr-subtle: #6b7482;
+  /* Was #6b7482: 4.07:1 on --vr-canvas, under WCAG AA's 4.5:1 for the small
+     labels that use it (found by an axe-core scan for the final report).
+     #5f6876 is 4.85:1 on canvas, 5.21:1 on raised, 5.63:1 on surface, and
+     still sits visibly lighter than --vr-muted. */
+  --vr-subtle: #5f6876;
   --vr-accent: #0d7490;
   --vr-accent-soft: #d8f1f8;
   --vr-accent-ink: #ffffff;

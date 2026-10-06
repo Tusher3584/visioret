@@ -1,4 +1,9 @@
-Test set: 13146 images from 858 patients, reserved from pooled train+val+test before any training (patient_split.json)
+Test set: 13146 images from 858 patient group keys, reserved from pooled train+val+test before any training (patient_split.json)
+CAVEAT: the group key is class-prefixed (see model/dataset.py's KNOWN LIMITATION),
+so ~40.9% of these images belong to a patient seen under a different class during
+training. Measured effect is conservative, not inflationary -- the model scores
+LOWER on those (0.9180) than on truly-unseen patients (0.9750). Regenerate with:
+  python -m model.audit_patient_leakage
 Checkpoint: I:\Coding\visioret\model\checkpoints\resnet50_oct.pth
 
               precision    recall  f1-score   support
